@@ -1,0 +1,68 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+.venv-qwen/
+venv/
+env/
+ENV/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.secret.json
+*.secret.yaml
+*.secret.yml
+
+# Generated benchmark outputs
+results/
+logs/
+*.log
+*.checkpoint.json
+
+# Local model weights and caches
+.cache/
+*.safetensors
+*.gguf
+*.ckpt
+*.pt
+*.pth
+
+# Jupyter, IDE, and OS files
+.ipynb_checkpoints/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Native crash dumps
+/core
+/core.[0-9]*
+!core.py
+
+# ai
+AGENTS.md
+.worktrees/
+/docs/superpowers/
+LOG.md
+
+others/
+outputs/
+viewer
