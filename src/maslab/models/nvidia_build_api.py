@@ -6,10 +6,11 @@ import time
 import requests
 
 from ..base import Model, Response
+from ._http import RETRYABLE_STATUS_CODES as HTTP_RETRYABLE_STATUS_CODES
 
 
 class NvidiaBuildAPIModel(Model):
-    RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+    RETRYABLE_STATUS_CODES = set(HTTP_RETRYABLE_STATUS_CODES)
 
     def _post_with_retries(self, url, **kwargs):
         for retry_idx in range(self.max_retries + 1):

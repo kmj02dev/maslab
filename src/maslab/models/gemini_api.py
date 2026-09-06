@@ -5,11 +5,13 @@ import time
 
 import requests
 
-from ..base import Response
-from .nvidia_build_api import NvidiaBuildAPIModel
+from ..base import Model, Response
+from ._http import RETRYABLE_STATUS_CODES as HTTP_RETRYABLE_STATUS_CODES
 
 
-class GeminiAPIModel(NvidiaBuildAPIModel):
+class GeminiAPIModel(Model):
+    RETRYABLE_STATUS_CODES = set(HTTP_RETRYABLE_STATUS_CODES)
+
     def _post_with_retries(self, url, **kwargs):
         for retry_idx in range(self.max_retries + 1):
             try:
