@@ -5,12 +5,32 @@ import time
 
 import requests
 
-from ..base import Model, Response
+from ..core import Model, Response
 from ._http import RETRYABLE_STATUS_CODES as HTTP_RETRYABLE_STATUS_CODES
 
 
 class GeminiAPIModel(Model):
     RETRYABLE_STATUS_CODES = set(HTTP_RETRYABLE_STATUS_CODES)
+
+    def __init__(
+        self,
+        name,
+        api_key=None,
+        reasoning=False,
+        max_tokens=1024,
+        temperature=0.7,
+        top_p=0.95,
+        max_retries=2,
+        timeout_seconds=None,
+    ):
+        super().__init__(name)
+        self.api_key = api_key
+        self.reasoning = reasoning
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.top_p = top_p
+        self.max_retries = max_retries
+        self.timeout_seconds = timeout_seconds
 
     def _post_with_retries(self, url, **kwargs):
         for retry_idx in range(self.max_retries + 1):
@@ -81,13 +101,13 @@ class GeminiAPIModel(Model):
             for message in messages
             if message["role"] != "system"
         ]
-        generation_config = {"maxOutputTokens": self.max_tokens}
+        generation_options = {"maxOutputTokens": self.max_tokens}
         if self.name.startswith("gemini-3"):
-            generation_config["thinkingConfig"] = {
+            generation_options["thinkingConfig"] = {
                 "thinkingLevel": "medium" if self.reasoning else "minimal",
             }
         else:
-            generation_config.update({
+            generation_options.update({
                 "temperature": self.temperature,
                 "topP": self.top_p,
                 "thinkingConfig": {
@@ -96,7 +116,7 @@ class GeminiAPIModel(Model):
             })
         payload = {
             "contents": contents,
-            "generationConfig": generation_config,
+            "generationConfig": generation_options,
         }
         if system_text:
             payload["systemInstruction"] = {

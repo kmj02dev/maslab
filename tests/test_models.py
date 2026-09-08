@@ -1,3 +1,7 @@
+from types import SimpleNamespace
+
+import requests
+
 import pytest
 
 from maslab import (
@@ -5,8 +9,6 @@ from maslab import (
     HuggingfaceModel,
     Model,
     NvidiaBuildAPIModel,
-    create_model,
-    register_model_backend,
 )
 from maslab.testing import check_model_backend
 
@@ -64,22 +66,8 @@ def test_model_backend_contract_check():
     assert check_model_backend(FixedModel())
 
 
-def test_backend_registry_is_independent_of_model_id():
-    backend_name = "test-fixed"
-    register_model_backend(
-        backend_name,
-        lambda name, **kwargs: FixedModel(content=name),
-        overwrite=True,
-    )
-
-    model = create_model(backend_name, "any/model-id")
-
-    assert model.content == "any/model-id"
 
 
-def test_backend_registry_rejects_unknown_backend():
-    with pytest.raises(ValueError, match="Unknown model backend"):
-        create_model("missing", "any/model-id")
 
 
 def test_huggingface_model_splits_native_thinking_from_final_content():
@@ -126,5 +114,65 @@ def test_huggingface_model_forwards_additional_generation_kwargs():
 
     assert response.content == "plain"
     assert backend.last_generation_kwargs["max_new_tokens"] == 81920
+    assert backend.last_generation_kwargs["temperature"] == 1.0
+    assert backend.last_generation_kwargs["top_p"] == 0.95
     assert backend.last_generation_kwargs["top_k"] == 20
     assert backend.last_generation_kwargs["repetition_penalty"] == 1.0
+
+
+@pytest.mark.parametrize("model_class", [GeminiAPIModel, NvidiaBuildAPIModel])
+def test_http_adapters_own_generation_credentials_retry_and_timeout_options(model_class, monkeypatch):
+    calls = []
+    sleeps = []
+
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        if len(calls) == 1:
+            raise requests.exceptions.Timeout("simulated timeout")
+        if model_class is GeminiAPIModel:
+            payload = {
+                "candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "answer"}]}}],
+                "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 2},
+            }
+        else:
+            payload = {
+                "choices": [{"finish_reason": "stop", "message": {"content": "answer"}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+            }
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: payload)
+
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setattr(model_class.__module__ + ".time.sleep", sleeps.append)
+    model = model_class(
+        "test-model", api_key="test-key", reasoning=True,
+        max_tokens=256, temperature=0.2, top_p=0.8,
+        max_retries=1, timeout_seconds=7,
+    )
+
+    response = model.respond([{"role": "user", "content": "question"}])
+
+    assert response.content == "answer"
+    assert response.input_tokens == 3
+    assert response.output_tokens == 2
+    assert len(calls) == 2
+    assert sleeps == [1]
+    assert all(kwargs["timeout"] == 7 for _, kwargs in calls)
+    request = calls[-1][1]
+    if model_class is GeminiAPIModel:
+        assert request["headers"]["x-goog-api-key"] == "test-key"
+        assert request["json"]["generationConfig"] == {
+            "maxOutputTokens": 256, "temperature": 0.2, "topP": 0.8,
+            "thinkingConfig": {"thinkingBudget": -1},
+        }
+    else:
+        assert request["headers"]["Authorization"] == "Bearer test-key"
+        assert request["json"]["max_tokens"] == 256
+        assert request["json"]["temperature"] == 0.2
+        assert request["json"]["top_p"] == 0.8
+        assert request["json"]["chat_template_kwargs"] == {"enable_thinking": True}
+
+
+@pytest.mark.parametrize("model_class", [GeminiAPIModel, NvidiaBuildAPIModel, HuggingfaceModel])
+def test_model_adapters_reject_removed_generation_config_argument(model_class):
+    with pytest.raises(TypeError, match="generation_config"):
+        model_class("fake", generation_config=object())

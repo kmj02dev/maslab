@@ -1,4 +1,4 @@
-"""Run a current MASLab experiment without API keys or model downloads."""
+"""Run MASLab composition examples without API keys or model downloads."""
 
 from copy import deepcopy
 import json
@@ -35,41 +35,58 @@ class DemoBackend(ml.Model):
 
 
 def main() -> None:
-    task = {
-        "id": "fruit-1",
-        "description": "Choose the fruit supported by the information.",
-        "shared_information": ["The object is a fruit."],
-        "hidden_information": [
-            "The object is yellow.",
-            "The object is curved.",
-        ],
-        "possible_answers": ["banana", "apple"],
-        "correct_answer": "banana",
-    }
-
-    experiment = ml.Experiment(
-        model=DemoBackend(),
-        benchmark=ml.HiddenBench([task]),
-        config=ml.ExperimentConfig(
-            session=ml.SessionConfig(
-                num_rounds=2,
-                debate_topology="fully_connected",
-            ),
-            random_state=0,
-        ),
+    model = DemoBackend()
+    agent = ml.Agent(
+        "reader",
+        model,
+        system_prompt="Identify the fruit. It is yellow.",
+        use_context=False,
     )
+    response = agent.query()
+    detail = agent.history()
+    print("Single-agent answer:", response.content)
+    print("Single-agent usage:", detail[-1]["usage"])
 
-    result = experiment.run()
-    task_result = result.results[0]
+    agents = [
+        ml.Agent("first", model, "The fruit is yellow.", use_context=False),
+        ml.Agent("second", model, "The fruit is curved.", use_context=False),
+    ]
+    multiagent = ml.SequentialMultiagent(agents, loop=5)
+    response = multiagent.query("go debate!")
+    detail = multiagent.history()
+    print("Multiagent answer:", response.content)
+    print("Multiagent steps:", len(detail[-1]["steps"]))
+    print("Multiagent usage:", detail[-1]["usage"])
 
+    parallel = ml.ParallelMultiagent([
+        ml.Agent("yellow", model, "The fruit is yellow.", use_context=False),
+        ml.Agent("curved", model, "The fruit is curved.", use_context=False),
+        ml.Agent("unknown", model, "Identify the fruit.", use_context=False),
+    ])
+    responses = parallel.query("Which fruit is supported by your facts?")
+    print("Parallel answers:", [response.content for response in responses])
+    print("Majority vote:", ml.MajorityVote()(responses))
+    aggregator = ml.LLMAggregate(model)
+    print("LLM aggregator (demo backend):", aggregator(responses))
+    print("Parallel usage:", parallel.history()[-1]["usage"])
+    print("Aggregation usage:", aggregator.history()[-1]["usage"])
+
+    mesh = ml.MeshMultiagent([
+        ml.Agent("first", model, "The fruit is yellow.", use_context=False),
+        ml.Agent("second", model, "The fruit is curved.", use_context=False),
+    ], loop=2)
+    responses = mesh.query("Identify the fruit.", update_context=False)
+    print("Mesh answers:", [response.content for response in responses])
+    print("Mesh steps:", len(mesh.history()[-1]["steps"]))
+
+    pipeline = ml.Pipeline([
+        ml.Agent("writer", model, "The fruit is yellow.", use_context=False),
+        ml.Suffix("\n\nReview this answer."),
+        ml.Agent("reviewer", model, use_context=False),
+    ])
+    print("Pipeline answer:", pipeline.query("Identify the fruit.").content)
+    print(ml.dialog(pipeline.history()))
     print("MASLab version:", ml.__version__)
-    print("Aggregate metrics:", result.metrics)
-    print("Task metrics:", task_result.metrics["overall"])
-    print("Decision rounds:", list(task_result.decisions))
-    print("Decisions by round:", task_result.decisions)
-
-    # Persist only when needed:
-    # result.save_json("outputs/quickstart.json")
 
 
 if __name__ == "__main__":

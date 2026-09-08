@@ -4,7 +4,7 @@ from contextlib import nullcontext
 from copy import deepcopy
 import time
 
-from ..base import Model, Response
+from ..core import Model, Response
 
 
 class HuggingfaceModel(Model):
@@ -21,9 +21,16 @@ class HuggingfaceModel(Model):
         trust_remote_code=False,
         auto_model_class="causal_lm",
         generation_kwargs=None,
-        **kwargs,
+        reasoning=False,
+        max_tokens=1024,
+        temperature=0.7,
+        top_p=0.95,
     ):
-        super().__init__(name, **kwargs)
+        super().__init__(name)
+        self.reasoning = reasoning
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.top_p = top_p
 
         tokenizer_kwargs = tokenizer_kwargs or {}
         model_kwargs = model_kwargs or {}

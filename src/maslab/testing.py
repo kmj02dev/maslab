@@ -2,8 +2,7 @@
 
 from copy import deepcopy
 
-from .base import Benchmark, Model
-from .types import Response
+from .core import Model, Response
 
 
 def check_model_backend(backend):
@@ -28,19 +27,3 @@ def check_model_backend(backend):
     return True
 
 
-def check_benchmark(benchmark):
-    """Assert the minimum dataset and prompt-building benchmark contract."""
-    if not isinstance(benchmark, Benchmark):
-        raise AssertionError("benchmark must inherit from maslab.Benchmark")
-    if not isinstance(benchmark.tasks, list):
-        raise AssertionError("benchmark.tasks must be a list")
-    if benchmark.tasks:
-        prompts = benchmark.build_prompts(
-            benchmark.tasks[0],
-            lambda **context: "MASLab contract prompt",
-        )
-        if not isinstance(prompts, list) or not prompts:
-            raise AssertionError("benchmark.build_prompts() must return a non-empty list")
-        if not all(isinstance(prompt, str) for prompt in prompts):
-            raise AssertionError("benchmark prompts must be strings")
-    return True

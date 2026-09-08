@@ -1,29 +1,40 @@
-"""Built-in model adapters and backend registry."""
+"""Optional model adapters, loaded only when selected."""
 
-from .gemini_api import GeminiAPIModel
-from .huggingface import HuggingfaceModel
-from .nvidia_build_api import NvidiaBuildAPIModel
-from .registry import (
-    LEGACY_MODEL_BACKENDS,
-    MODEL_BACKENDS,
-    create_model,
-    get_model,
-    get_model_backend,
-    register_model_backend,
-)
+from importlib import import_module
+from typing import TYPE_CHECKING
 
-register_model_backend("huggingface", HuggingfaceModel)
-register_model_backend("nvidia", NvidiaBuildAPIModel)
-register_model_backend("gemini", GeminiAPIModel)
+if TYPE_CHECKING:
+    from maslab.models.gemini_api import (
+        GeminiAPIModel,
+    )
+    from maslab.models.huggingface import (
+        HuggingfaceModel,
+    )
+    from maslab.models.nvidia_build_api import (
+        NvidiaBuildAPIModel,
+    )
+
+_LAZY_EXPORTS = {
+    "GeminiAPIModel": "maslab.models.gemini_api",
+    "HuggingfaceModel": "maslab.models.huggingface",
+    "NvidiaBuildAPIModel": "maslab.models.nvidia_build_api",
+}
 
 __all__ = [
     "GeminiAPIModel",
     "HuggingfaceModel",
-    "LEGACY_MODEL_BACKENDS",
-    "MODEL_BACKENDS",
     "NvidiaBuildAPIModel",
-    "create_model",
-    "get_model",
-    "get_model_backend",
-    "register_model_backend",
 ]
+
+
+def __getattr__(name):
+    module_name = _LAZY_EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))
