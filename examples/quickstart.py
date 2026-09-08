@@ -40,30 +40,29 @@ def main() -> None:
         "reader",
         model,
         system_prompt="Identify the fruit. It is yellow.",
-        use_context=False,
     )
-    response = agent.query()
+    response = agent.query(use_context=False)
     detail = agent.history()
     print("Single-agent answer:", response.content)
     print("Single-agent usage:", detail[-1]["usage"])
 
     agents = [
-        ml.Agent("first", model, "The fruit is yellow.", use_context=False),
-        ml.Agent("second", model, "The fruit is curved.", use_context=False),
+        ml.Agent("first", model, "The fruit is yellow."),
+        ml.Agent("second", model, "The fruit is curved."),
     ]
     multiagent = ml.SequentialMultiagent(agents, loop=5)
-    response = multiagent.query("go debate!")
+    response = multiagent.query("go debate!", use_context=False)
     detail = multiagent.history()
     print("Multiagent answer:", response.content)
     print("Multiagent steps:", len(detail[-1]["steps"]))
     print("Multiagent usage:", detail[-1]["usage"])
 
     parallel = ml.ParallelMultiagent([
-        ml.Agent("yellow", model, "The fruit is yellow.", use_context=False),
-        ml.Agent("curved", model, "The fruit is curved.", use_context=False),
-        ml.Agent("unknown", model, "Identify the fruit.", use_context=False),
+        ml.Agent("yellow", model, "The fruit is yellow."),
+        ml.Agent("curved", model, "The fruit is curved."),
+        ml.Agent("unknown", model, "Identify the fruit."),
     ])
-    responses = parallel.query("Which fruit is supported by your facts?")
+    responses = parallel.query("Which fruit is supported by your facts?", use_context=False)
     print("Parallel answers:", [response.content for response in responses])
     print("Majority vote:", ml.MajorityVote()(responses))
     aggregator = ml.LLMAggregate(model)
@@ -72,19 +71,19 @@ def main() -> None:
     print("Aggregation usage:", aggregator.history()[-1]["usage"])
 
     mesh = ml.MeshMultiagent([
-        ml.Agent("first", model, "The fruit is yellow.", use_context=False),
-        ml.Agent("second", model, "The fruit is curved.", use_context=False),
+        ml.Agent("first", model, "The fruit is yellow."),
+        ml.Agent("second", model, "The fruit is curved."),
     ], loop=2)
-    responses = mesh.query("Identify the fruit.", update_context=False)
+    responses = mesh.query("Identify the fruit.", use_context=False, update_context=False)
     print("Mesh answers:", [response.content for response in responses])
     print("Mesh steps:", len(mesh.history()[-1]["steps"]))
 
     pipeline = ml.Pipeline([
-        ml.Agent("writer", model, "The fruit is yellow.", use_context=False),
+        ml.Agent("writer", model, "The fruit is yellow."),
         ml.Suffix("\n\nReview this answer."),
-        ml.Agent("reviewer", model, use_context=False),
+        ml.Agent("reviewer", model),
     ])
-    print("Pipeline answer:", pipeline.query("Identify the fruit.").content)
+    print("Pipeline answer:", pipeline.query("Identify the fruit.", use_context=False).content)
     print(ml.dialog(pipeline.history()))
     print("MASLab version:", ml.__version__)
 

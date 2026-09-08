@@ -17,7 +17,7 @@ def test_round_barrier_broadcast_order_usage_and_final_results():
             response.content = f"{response.content}:{len(self.calls)}"
             return response
 
-    agents = [Agent(str(i), RoundModel(str(i)), use_context=False) for i in range(3)]
+    agents = [Agent(str(i), RoundModel(str(i))) for i in range(3)]
     group = MeshMultiagent(agents, loop=3)
     results = group.query("question", update_context=False)
     assert [r.content for r in results] == ["0:3", "1:3", "2:3"]
@@ -64,7 +64,7 @@ def test_invalid_loop(loop):
 
 
 def test_one_round_and_repeated_queries_start_from_new_question():
-    agent = Agent("a", FixedModel("a"), use_context=False)
+    agent = Agent("a", FixedModel("a"))
     group = MeshMultiagent([agent])
     assert isinstance(group.query("first")[0], Response)
     group.query("second")

@@ -30,7 +30,7 @@ class Multiagent(ABC, Generic[ResponseT]):
     def query(
         self,
         message: str = "Continue.",
-        use_context: bool | None = None,
+        use_context: bool = True,
         update_context: bool = True,
     ) -> ResponseT:
         """Execute and record one group conversation, returning its responses."""

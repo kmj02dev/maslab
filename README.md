@@ -7,11 +7,11 @@ sequential, parallel, and mesh multiagents, response-processing pipelines, and a
 Single agents, multiagents, and pipelines share the same conversation API:
 
 ```python
-response = agent.query()
+response = agent.query(use_context=False)
 detail = agent.history()
 
 multiagent = SequentialMultiagent(agents, loop=5)
-response = multiagent.query("go debate!")
+response = multiagent.query("go debate!", use_context=False)
 detail = multiagent.history()
 ```
 
@@ -97,10 +97,9 @@ agent = ml.Agent(
     "researcher",
     model,
     system_prompt="Explain how information sharing improves group decisions.",
-    use_context=False,
 )
 
-response = agent.query()
+response = agent.query(use_context=False)
 detail = agent.history()
 print(response.content)
 print(detail[-1]["prompt"])
@@ -117,12 +116,12 @@ Compose multiple agents using the same interface:
 
 ```python
 agents = [
-    ml.Agent("researcher", model, "Find the relevant facts.", use_context=False),
-    ml.Agent("reviewer", model, "Review the previous answer.", use_context=False),
+    ml.Agent("researcher", model, "Find the relevant facts."),
+    ml.Agent("reviewer", model, "Review the previous answer."),
 ]
 multiagent = ml.SequentialMultiagent(agents, loop=5)
 
-response = multiagent.query("go debate!")
+response = multiagent.query("go debate!", use_context=False)
 detail = multiagent.history()
 print(response.content)
 print(detail[-1]["steps"])
@@ -139,9 +138,9 @@ query steps. Each participant's full response is recorded in the group's history
 The `agents` argument and attribute contain query participants only; use
 `Pipeline(steps)` to insert response transformations.
 
-Participants retain their own context settings and conversations between calls.
-An explicit `multiagent.query(message, use_context=False)` overrides the context
-setting for that call on every participant. `update_context=False` prevents
+Participants retain their own conversations between calls.
+`multiagent.query(message, use_context=False)` excludes prior conversation turns
+for that call on every participant. `update_context=False` prevents
 conversation updates while still recording execution history.
 
 Multiagents can also be participants in another multiagent:
@@ -342,8 +341,8 @@ response = editor.query(ml.MajorityVote()(responses))
 print(response.content)
 ```
 
-Each participant retains its own context setting. The optional `use_context` and
-`update_context` call arguments propagate to every branch. Branches must use
+The `use_context` and `update_context` call arguments both default to `True`
+and propagate to every branch. Branches must use
 distinct Agent/Multiagent/Transform instances, including inside nested groups and
 pipelines, so that their context and history cannot be modified by a sibling. Shared model
 backends must support concurrent `respond()` calls. Calls run in threads;
@@ -427,8 +426,11 @@ detail = agent.history()
 Context policies are `append`, `replace`, `last`, and `last_conversation`.
 System prompts are preserved by all policies. These policies affect the context
 sent to future model calls; they do not discard execution history. Both
-`generate()` and `query()` use the constructor's `use_context` setting unless a
-per-call override is supplied.
+`generate()` and `query()` accept `use_context=True` as a call argument.
+`Agent` does not accept or store `use_context` in its constructor; `None` is not
+a supported value. `query()` also accepts `update_context=True`: reading past
+turns and saving new turns are independent. To disable both, pass
+`use_context=False, update_context=False`. Execution history is still recorded.
 
 `chat()` and `chat_response()` have been replaced by `query()`. Read
 `query(...).content` when answer text is needed. For parallel groups, use
@@ -471,7 +473,8 @@ MASLab is licensed under the MIT License. See [LICENSE](LICENSE).
 round, where every participant receives the original question. In subsequent
 rounds, each participant receives a JSON message with `question` and `responses`:
 the original question and all previous-round responses (including its own), in
-participant order, identified by `agent_id`. Agent context settings still apply.
+participant order, identified by `agent_id`. The context arguments supplied to
+`mesh.query()` apply to every participant.
 
 ```python
 from maslab import MeshMultiagent

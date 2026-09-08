@@ -16,7 +16,7 @@ def _query_step(
     *,
     loop_idx: int,
     step_idx: int,
-    use_context: bool | None,
+    use_context: bool,
     update_context: bool,
 ) -> Response:
     history_start = len(participant._history)

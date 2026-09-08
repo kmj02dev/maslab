@@ -36,7 +36,7 @@ class LLMAggregate(Aggregate):
             raise TypeError("model must inherit from maslab.Model")
         if not isinstance(system_prompt, str) or not system_prompt.strip():
             raise ValueError("system_prompt must be a non-empty string")
-        self.agent = Agent(id, model, system_prompt, use_context=False)
+        self.agent = Agent(id, model, system_prompt)
 
     def aggregate(self, responses: Sequence[str | Response]) -> str:
         return self.aggregate_response(responses).content

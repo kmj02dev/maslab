@@ -17,19 +17,14 @@ class Agent:
         model: Model,
         system_prompt: str = "",
         context_policy: str = "append",
-        *,
-        use_context: bool = True,
     ):
         if context_policy not in self.CONTEXT_POLICIES:
             choices = ", ".join(sorted(self.CONTEXT_POLICIES))
             raise ValueError(f"context_policy must be one of: {choices}")
-        if not isinstance(use_context, bool):
-            raise TypeError("use_context must be a boolean")
         self.id = id
         self.model = model
         self.context: list[ChatMessage] = []
         self.context_policy = context_policy
-        self.use_context = use_context
         self._history: list[dict[str, Any]] = []
 
         if system_prompt:
@@ -41,15 +36,13 @@ class Agent:
     def generate(
         self,
         message: str = "Continue.",
-        use_context: bool | None = None,
+        use_context: bool = True,
     ) -> Response:
         """Generate a raw response without changing context or query history."""
         if not isinstance(message, str):
             raise TypeError("message must be a string")
-        if use_context is None:
-            use_context = self.use_context
         if not isinstance(use_context, bool):
-            raise TypeError("use_context must be a boolean or None")
+            raise TypeError("use_context must be a boolean")
         messages = deepcopy(self.context if use_context else self.system_context())
         messages.append({
             "role": "user",
@@ -60,7 +53,7 @@ class Agent:
     def query(
         self,
         message: str = "Continue.",
-        use_context: bool | None = None,
+        use_context: bool = True,
         update_context: bool = True,
     ) -> Response:
         """Return the response and record the completed conversation."""

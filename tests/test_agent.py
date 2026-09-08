@@ -50,7 +50,7 @@ def test_last_conversation_policy_preserves_system_prompt():
 
 def test_query_without_message_uses_default_request_and_records_details():
     model = FixedModel("answer")
-    agent = Agent("writer", model, "Write an article.", use_context=False)
+    agent = Agent("writer", model, "Write an article.")
 
     response = agent.query()
     assert response.content == "answer"
@@ -73,20 +73,20 @@ def test_query_without_message_uses_default_request_and_records_details():
     assert set(detail[0]["usage"]).isdisjoint(detail[0])
 
 
-def test_constructor_context_setting_and_per_call_override_are_independent():
+def test_context_is_selected_per_call_without_changing_default():
     model = FixedModel("answer")
-    agent = Agent("0", model, "system", use_context=False)
+    agent = Agent("0", model, "system")
     agent.query("first")
-    agent.query("second")
-    agent.query("third", use_context=True)
-    agent.query("fourth")
+    agent.query("second", use_context=False)
+    agent.query("third")
+    agent.query("fourth", use_context=False)
 
     assert [message["content"] for message in model.calls[1]] == ["system", "second"]
     assert [message["content"] for message in model.calls[2]] == [
         "system", "first", "answer", "second", "answer", "third",
     ]
     assert [message["content"] for message in model.calls[3]] == ["system", "fourth"]
-    assert agent.use_context is False
+    assert not hasattr(agent, "use_context")
     assert len(agent.history()) == 4
 
 
@@ -110,12 +110,12 @@ def test_history_is_independent_of_context_policy_and_returned_responses():
     assert agent.history()[0]["usage"]["total_tokens"] == 2
 
 
-def test_generate_honors_constructor_context_without_recording_a_query():
+def test_generate_uses_explicit_context_without_recording_a_query():
     model = FixedModel("answer")
-    agent = Agent("0", model, "system", use_context=False)
+    agent = Agent("0", model, "system")
     agent.query("first")
     before = agent.history()
-    response = agent.generate("stateless")
+    response = agent.generate("stateless", use_context=False)
 
     assert isinstance(response, Response)
     assert [message["content"] for message in model.calls[-1]] == ["system", "stateless"]
@@ -148,4 +148,32 @@ def test_invalid_query_input_does_not_call_model():
         agent.query(None)
     with pytest.raises(TypeError, match="use_context"):
         agent.query("hello", use_context="false")
+    assert model.calls == []
+
+
+def test_constructor_no_longer_accepts_context_flag():
+    with pytest.raises(TypeError, match="use_context"):
+        Agent("a", FixedModel(), use_context=False)
+
+
+@pytest.mark.parametrize("use_context", [False, True])
+@pytest.mark.parametrize("update_context", [False, True])
+def test_context_reading_and_writing_are_independent(use_context, update_context):
+    model = FixedModel("answer")
+    agent = Agent("a", model, "system")
+    agent.query("first")
+    before = list(agent.context)
+    agent.query("second", use_context=use_context, update_context=update_context)
+    assert model.calls[-1] == (before if use_context else before[:1]) + [
+        {"role": "user", "content": "second"}]
+    assert agent.context == before + ([
+        {"role": "user", "content": "second"},
+        {"role": "assistant", "content": "answer"}] if update_context else [])
+    assert len(agent.history()) == 2
+
+
+def test_generate_rejects_none_without_model_call():
+    model = FixedModel()
+    with pytest.raises(TypeError, match="use_context"):
+        Agent("a", model).generate("hello", use_context=None)
     assert model.calls == []

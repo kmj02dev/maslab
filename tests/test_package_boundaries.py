@@ -71,8 +71,8 @@ assert get_type_hints(Transform.transform)["return"] is Response
 assert get_type_hints(SequentialMultiagent.query)["return"] is Response
 assert get_type_hints(Pipeline.query)["return"] is Response
 assert get_type_hints(ParallelMultiagent.query)["return"] == list[Response]
-first = Agent("first", Echo("A"), use_context=False)
-second = Agent("second", Echo("B"), use_context=False)
+first = Agent("first", Echo("A"))
+second = Agent("second", Echo("B"))
 assert Pipeline([SequentialMultiagent([first, second]), Exclaim()]).query("question").content == "B!"
 responses = ParallelMultiagent([first, second]).query("question")
 assert all(isinstance(response, Response) for response in responses)

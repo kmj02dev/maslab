@@ -41,13 +41,13 @@ class SequentialMultiagent(Multiagent[Response]):
     def query(
         self,
         message: str = "Continue.",
-        use_context: bool | None = None,
+        use_context: bool = True,
         update_context: bool = True,
     ) -> Response:
         if not isinstance(message, str):
             raise TypeError("message must be a string")
-        if use_context is not None and not isinstance(use_context, bool):
-            raise TypeError("use_context must be a boolean or None")
+        if not isinstance(use_context, bool):
+            raise TypeError("use_context must be a boolean")
         if not isinstance(update_context, bool):
             raise TypeError("update_context must be a boolean")
         self._validate_agents()

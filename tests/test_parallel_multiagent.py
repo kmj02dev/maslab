@@ -11,8 +11,8 @@ from maslab import (
 from conftest import FixedModel
 
 
-def make_agent(label, *, use_context=False):
-    return Agent(label, FixedModel(label), f"system {label}", use_context=use_context)
+def make_agent(label):
+    return Agent(label, FixedModel(label), f"system {label}")
 
 
 def test_parallel_calls_overlap_but_results_and_history_follow_input_order():
@@ -61,7 +61,7 @@ def test_parallel_calls_overlap_but_results_and_history_follow_input_order():
 
 
 def test_parallel_retains_private_context_and_propagates_per_call_overrides():
-    first, second = make_agent("A", use_context=True), make_agent("B")
+    first, second = make_agent("A"), make_agent("B")
     first.query("private question")
     group = ParallelMultiagent([first, second])
 

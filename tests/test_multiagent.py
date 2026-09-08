@@ -15,8 +15,8 @@ class EchoModel(FixedModel):
         return super().respond(messages)
 
 
-def make_agent(label, *, use_context=False):
-    return Agent(label, EchoModel(label), f"system {label}", use_context=use_context)
+def make_agent(label):
+    return Agent(label, EchoModel(label), f"system {label}")
 
 
 def test_single_and_multiagent_share_the_user_query_history_interface():
@@ -57,22 +57,22 @@ def test_loop_runs_every_agent_and_hands_off_across_passes():
     ]
 
 
-def test_repeated_calls_retain_history_and_use_each_agents_context_setting():
-    first, second = make_agent("a", use_context=True), make_agent("b")
+def test_repeated_calls_retain_history_and_read_context_by_default():
+    first, second = make_agent("a"), make_agent("b")
     group = SequentialMultiagent([first, second])
     first.query("outside group")
 
     assert group.query("first").content == "b:a:first"
     assert group.query("second").content == "b:a:second"
     assert len(first.model.calls[-1]) == 6
-    assert len(second.model.calls[-1]) == 2
+    assert len(second.model.calls[-1]) == 4
     assert len(group.history()) == 2
     assert group.history()[0]["usage"]["total_tokens"] == 4
     assert group.history()[1]["steps"][0]["message"] == "second"
 
 
 def test_context_overrides_and_update_context_propagate_to_children():
-    first, second = make_agent("a", use_context=True), make_agent("b", use_context=True)
+    first, second = make_agent("a"), make_agent("b")
     group = SequentialMultiagent([first, second], loop=2)
 
     group.query("start", use_context=False, update_context=False)
@@ -81,7 +81,7 @@ def test_context_overrides_and_update_context_propagate_to_children():
         assert len(agent.context) == 1
         assert all(len(prompt) == 2 for prompt in agent.model.calls)
         assert len(agent.history()) == 2
-        assert agent.use_context is True
+        assert not hasattr(agent, "use_context")
 
 
 def test_nested_multiagents_preserve_input_order_details_and_usage():
@@ -206,10 +206,10 @@ def test_invalid_participants_and_messages_are_rejected():
 def test_groups_execute_participant_query_overrides_once(group_class):
     class CustomAgent(Agent):
         def __init__(self):
-            super().__init__("custom", FixedModel("answer"), use_context=False)
+            super().__init__("custom", FixedModel("answer"))
             self.query_calls = []
 
-        def query(self, message="Continue.", use_context=None, update_context=True) -> Response:
+        def query(self, message="Continue.", use_context=True, update_context=True) -> Response:
             self.query_calls.append((message, use_context, update_context))
             return super().query(message, use_context=use_context, update_context=update_context)
 
@@ -224,3 +224,19 @@ def test_groups_execute_participant_query_overrides_once(group_class):
     assert agent.query_calls == [("question", False, False)]
     assert len(agent.model.calls) == len(agent.history()) == len(group.history()) == 1
     assert agent.context == []
+
+
+@pytest.mark.parametrize("kind", ["agent", "sequential", "parallel", "mesh", "pipeline"])
+def test_none_context_flag_is_rejected_at_every_query_entry(kind):
+    from maslab import MeshMultiagent
+    agent = make_agent("a")
+    participant = agent if kind == "agent" else {
+        "sequential": SequentialMultiagent,
+        "parallel": ParallelMultiagent,
+        "mesh": MeshMultiagent,
+        "pipeline": Pipeline,
+    }[kind]([agent])
+    with pytest.raises(TypeError, match="use_context"):
+        participant.query("hello", use_context=None)
+    assert agent.model.calls == []
+    assert participant.history() == []
