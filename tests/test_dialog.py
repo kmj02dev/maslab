@@ -31,7 +31,7 @@ def test_single_agent_dialog_preserves_outputs_and_has_no_side_effects(capsys):
 
     text = dialog(agent.history())
 
-    turn = "[writer]\n  first line\nsecond line\n"
+    turn = "[loop 1 | writer]\n  first line\nsecond line\n"
     assert text == turn + "\n\n" + turn
     assert dialog(agent.history()[-1:]) == turn
     assert agent.history() == before
@@ -49,7 +49,11 @@ def test_nested_pipeline_dialog_from_json_keeps_turn_order_without_summary_dupli
     pipeline.query("question two")
     history = json.loads(json.dumps(pipeline.history()))
     before = deepcopy(history)
-    run = "[solver]\ndraft\n\n[reviewer]\nreview\n\n[solver]\ndraft\n\n[reviewer]\nreview\n\n[editor]\nfinal"
+    run = (
+        "[loop 1 | solver]\ndraft\n\n[loop 1 | reviewer]\nreview\n\n"
+        "[loop 2 | solver]\ndraft\n\n[loop 2 | reviewer]\nreview\n\n"
+        "[loop 1 | editor]\nfinal"
+    )
 
     assert dialog(history) == run + "\n\n" + run
     assert dialog(history[-1:]) == run
@@ -70,7 +74,8 @@ def test_failed_parallel_group_keeps_completed_nested_outputs_in_participant_ord
         parallel.query("input")
 
     assert dialog(parallel.history()) == (
-        "[first]\nfinished before failure\n\n[second]\nindependent response"
+        "[loop 1 | first]\nfinished before failure\n\n"
+        "[loop 1 | second]\nindependent response"
     )
     empty_group = SequentialMultiagent([Agent("broken", FailingModel())])
     with pytest.raises(RuntimeError, match="model failed"):

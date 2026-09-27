@@ -18,7 +18,7 @@ def test_public_api_exposes_framework_entry_points():
     assert maslab.ParallelMultiagent
     assert maslab.Pipeline
     assert maslab.Aggregate
-    assert maslab.MajorityVote
+    assert maslab.ConcatAggregate
     assert maslab.LLMAggregate
     assert not hasattr(maslab, "Aggregator")
     assert maslab.Model
@@ -31,7 +31,7 @@ def test_public_api_exposes_framework_entry_points():
 
 
 def test_parallel_and_aggregator_package_imports_match_public_exports():
-    from maslab.core.aggregators import Aggregate, LLMAggregate, MajorityVote
+    from maslab.core.aggregators import Aggregate, LLMAggregate, ConcatAggregate
     from maslab.core.multiagents import ParallelMultiagent
 
     assert Aggregate is maslab.Aggregate
@@ -39,15 +39,16 @@ def test_parallel_and_aggregator_package_imports_match_public_exports():
     assert Aggregate.__module__ == "maslab.core.aggregators.aggregate"
     for module_name in ("maslab", "maslab.core", "maslab.core.aggregators"):
         module = importlib.import_module(module_name)
-        for removed_name in ("Aggregator", "LLMAggregator"):
+        for removed_name in ("Aggregator", "LLMAggregator", "MajorityVote", "PeerAggregate"):
             assert removed_name not in module.__all__
             assert not hasattr(module, removed_name)
     assert LLMAggregate is maslab.LLMAggregate
     assert LLMAggregate.__name__ == "LLMAggregate"
     assert LLMAggregate.__module__ == "maslab.core.aggregators.llm_aggregate"
     assert issubclass(LLMAggregate, Aggregate)
-    assert issubclass(MajorityVote, Aggregate)
-    assert MajorityVote is maslab.MajorityVote
+    assert issubclass(ConcatAggregate, Aggregate)
+    assert ConcatAggregate is maslab.ConcatAggregate
+    assert ConcatAggregate.__module__ == "maslab.core.aggregators.concat_aggregate"
     assert ParallelMultiagent is maslab.ParallelMultiagent
 
 

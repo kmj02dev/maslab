@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from importlib.metadata import PackageNotFoundError, version
 
 from .core import (
-    Agent, Aggregate, ChatMessage, LLMAggregate, MajorityVote,
+    Agent, Aggregate, ChatMessage, CumulativeMultiagent, ConcatAggregate, LLMAggregate,
     Model, Multiagent, MeshMultiagent, ParallelMultiagent, Pipeline, Response, SequentialMultiagent, Transform, Prefix, Suffix, Wrap, Usage,
 )
 
@@ -38,10 +38,11 @@ __all__ = [
     "Agent",
     "Aggregate",
     "ChatMessage",
+    "CumulativeMultiagent",
     "GeminiAPIModel",
     "HuggingfaceModel",
     "LLMAggregate",
-    "MajorityVote",
+    "ConcatAggregate",
     "Model",
     "Multiagent",
     "NvidiaBuildAPIModel",

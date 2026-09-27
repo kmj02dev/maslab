@@ -1,6 +1,6 @@
 """Model-backed synthesis of independent agent responses."""
 
-from collections.abc import Sequence
+from collections.abc import Iterable
 import json
 from typing import Any
 
@@ -38,11 +38,8 @@ class LLMAggregate(Aggregate):
             raise ValueError("system_prompt must be a non-empty string")
         self.agent = Agent(id, model, system_prompt)
 
-    def aggregate(self, responses: Sequence[str | Response]) -> str:
-        return self.aggregate_response(responses).content
-
-    def aggregate_response(self, responses: Sequence[str | Response]) -> Response:
-        """Return the raw synthesis response, including its own model usage."""
+    def aggregate(self, responses: Iterable[Response]) -> Response:
+        """Return the synthesis response, including its own model usage."""
         contents = self._contents(responses)
         return self.agent.query(
             json.dumps(contents, ensure_ascii=False, indent=2),

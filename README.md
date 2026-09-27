@@ -2,7 +2,7 @@
 
 MASLab is a composable Python library for multi-agent conversations and
 decision-making experiments. It provides model backends, stateful agents,
-sequential, parallel, and mesh multiagents, response-processing pipelines, and aggregates.
+sequential, cumulative, parallel, and mesh multiagents, response-processing pipelines, and aggregates.
 
 Single agents, multiagents, and pipelines share the same conversation API:
 
@@ -15,10 +15,12 @@ response = multiagent.query("go debate!", use_context=False)
 detail = multiagent.history()
 ```
 
-`query()` returns a `Response` for single agents, sequential groups, and pipelines. Read
+`query()` returns a `Response` for single agents, sequential and cumulative groups; pipelines return
+a `Response` or a final response list depending on their last step. Read
 `response.content` for the answer text and the response's fields for its prompt,
-reasoning, token counts, and generation time. Parallel and mesh groups return an ordered
-`list[Response]`, which an `Aggregate` can reduce to one answer text.
+reasoning, token counts, generation time, and originating agent ID (`response.agent_id`).
+Parallel and mesh groups return an ordered
+`list[Response]`, which an `Aggregate` can reduce to one `Response`.
 `history()` returns detailed snapshots of previous calls. Extend `Model`,
 `Multiagent`, `Transform`, and `Aggregate` to implement custom behavior.
 
@@ -26,9 +28,10 @@ reasoning, token counts, and generation time. Parallel and mesh groups return an
 
 - Shared `query()` / `history()` API for agents and nested multiagents
 - Sequential message handoff with an explicit number of complete passes
+- Cumulative handoff of all preceding discussion outputs, including the current round
 - Pipelines with explicit `Transform` steps for application-defined response processing
 - Independent parallel agent calls with ordered results and partial failure traces
-- Exact-text majority voting and model-backed response synthesis
+- Numbered response concatenation and model-backed response synthesis
 - Local Hugging Face, NVIDIA Build API, and Gemini model backends
 - Explicit abstract base classes for models and agent composition
 
@@ -134,7 +137,11 @@ nested group performing its own calls. The final response of each pass becomes
 the next pass's input. `loop` must be a positive integer.
 The returned `Response` contains the final participant's `content` and `reasoning`,
 the group input in `prompt`, and token counts and generation time summed across
-query steps. Each participant's full response is recorded in the group's history.
+query steps. The final response's `agent_id` is preserved through sequential,
+cumulative, and pipeline composition, including nested groups and wrappers.
+Group history entries still use the group's own ID; nested steps identify the
+individual participants. Each participant's full response is recorded in the
+group's history.
 The `agents` argument and attribute contain query participants only; use
 `Pipeline(steps)` to insert response transformations.
 
@@ -184,7 +191,7 @@ print(dialog(multiagent.history()))
 print(dialog(pipeline.history()[-1:]))  # Latest run only
 ```
 
-`dialog(history)` returns a string with `[agent_id]` labels and the original
+`dialog(history)` returns a string with `[loop i | agent_id]` labels and the original
 response content. It also accepts histories loaded from JSON. Nested groups are
 expanded without repeating group summaries; transforms, inputs, reasoning, and
 usage are omitted. Completed steps remain visible if a later step fails.
@@ -202,6 +209,38 @@ for step in multiagent.history()[-1]["steps"]:
     print("Output:", step["content"])
     print("Usage:", step["usage"])
 ```
+
+## Cumulative discussions
+
+`CumulativeMultiagent` queries participants sequentially, passing every preceding
+output instead of only the immediately preceding response:
+
+```python
+from maslab import CumulativeMultiagent, dialog
+
+debate = CumulativeMultiagent(agents, loop=4)
+response = debate.query(
+    "lets start debate", use_context=False, update_context=False,
+)
+print(response.content)
+print(dialog(debate.history()))
+```
+
+The first participant receives the original query message. Subsequent inputs
+are JSON strings containing only a `responses` list; the original question
+is not reinserted. Each response entry has `round` (one-based), `agent_id`, and the unchanged response `content`.
+For four agents, the second agent in round two sees all four round-one outputs
+plus the first output from round two. A participant's own earlier outputs are
+included; current and future outputs are not. Each group `query()` starts a new
+response list, while `history()` retains previous runs.
+
+As with other groups, both context flags default to `True` and propagate to
+participants. The example disables personal context reads and updates to avoid
+duplicating the explicit response history. System prompts and execution history are
+preserved. The returned `Response` uses the last participant's output and sums
+usage across the run. Single-response groups and pipelines can be participants;
+their final output enters the response history and their inner steps remain in history.
+There are no built-in initial decisions, votes, or stopping rules.
 
 ## Pipelines and response transformations
 
@@ -235,12 +274,13 @@ print(response.content)
 
 `Pipeline(steps, loop=...)` stores its participants in `steps`;
 `SequentialMultiagent(agents, loop=...)` stores its participants in `agents`.
-Move sequences containing transforms to `Pipeline`. The first pipeline step
-must be an `Agent` or a `Multiagent` that returns one `Response`. Later steps may
-be queries or transforms, including consecutive transforms and a final transform.
-Every loop executes all steps. Query steps receive the preceding response's
-content; transforms receive the whole response. The final processed content
-becomes the next loop's input and, after the last loop, the pipeline's final answer.
+Move sequences containing transforms or aggregates to `Pipeline`. Queries receive
+preceding response content; transforms receive one whole response; aggregates receive
+an ordered response list. A leading Aggregate accepts a list through `query(responses)`.
+A Mesh/Parallel output can pass intact to an Aggregate or collection-aware nested group.
+Lists are never implicitly converted to strings or mapped through single-response transforms.
+Every loop executes all steps; handoffs, including loop boundaries, must match these types.
+The final step determines whether the pipeline returns one Response or a list.
 
 `Transform.transform(Response) -> Response` processes a response without calling
 a model. Extraction, normalization, and formatting policies belong in application
@@ -249,13 +289,15 @@ The executor supplies a deep copy and snapshots the returned response, so a
 transform can edit its supplied copy without changing the originating agent's
 context or history. Outputs must be `Response` instances with string `content`.
 
-Pipeline history records distinguish `kind="query"` and `kind="transform"`.
+Pipeline history records distinguish `kind="query"`, `kind="transform"`, and `kind="aggregate"`.
 Query records contain the usual `agent_id`, `message`, response details and `usage`.
 Transform records contain `name`, `input`, `output`, and `status`, alongside the
-one-based `loop` and `step` indices. Input/output snapshots contain `prompt`,
+one-based `loop` and `step` indices. Input/output snapshots contain `agent_id`, `prompt`,
 `content`, `reasoning`, and nested `usage`; these metrics describe the response
-being processed and are not additional model costs. Group usage sums only query
-records, including nested groups once. Editing response metrics in a transform
+being processed and are not additional model costs. Group usage sums query records and the Aggregate
+step's own inference usage, including nested groups once. Text-only aggregates have
+zero inference usage; input response costs are not charged again. A list result retains
+its final individual response metrics; group history contains the complete execution cost. Editing response metrics in a transform
 does not change the recorded model cost.
 
 If a transform raises or returns an invalid result, its record has
@@ -263,11 +305,45 @@ If a transform raises or returns an invalid result, its record has
 message. Execution stops and the group preserves previous successful responses,
 transforms, and model usage in its failed history entry.
 
-`Pipeline` implements the `Multiagent[Response]` contract, independently of
-`SequentialMultiagent`. A pipeline can contain sequential groups or other
-pipelines, and can participate in sequential or parallel groups. Parallel
-collections must be reduced with an `Aggregate` before entering a pipeline
-as a single answer.
+`Pipeline` implements the `Multiagent` contract independently of
+`SequentialMultiagent`. Single-output pipelines can participate in sequential or
+parallel groups; collection-output pipelines require an explicit Aggregate before
+handoff to a single-message participant.
+
+### Reviewing formatted Mesh responses
+
+`ConcatAggregate()` combines all response contents in input order under
+`[agent 1]`, `[agent 2]`, and subsequent numbered headings. It preserves every
+response, including the recipient's own answer and duplicate contents.
+Use a `Suffix` step to add the original question and review instructions.
+
+```python
+from maslab import Agent, ConcatAggregate, MeshMultiagent, Pipeline, Suffix, dialog
+
+question = "What is 12 + 15?"
+agents = [Agent(f"agent_{i + 1}", model) for i in range(3)]  # your model backend
+review = MeshMultiagent([
+    Pipeline([
+        ConcatAggregate(),
+        Suffix(f"\n\nReview the responses and revise your answer. Original question: {question}"),
+        agent,
+    ], id=f"review_{i + 1}")
+    for i, agent in enumerate(agents)
+], loop=1)
+
+debate = Pipeline([MeshMultiagent(agents, loop=1), review])
+responses = debate.query(question, use_context=False, update_context=False)
+print([response.content for response in responses])
+print(dialog(debate.history()))
+```
+
+This makes six model calls: three independent answers followed by three reviews.
+For three or more total rounds, set `review.loop` to `rounds - 1`. Review branches
+receive the same completed previous-round list, each as a separate copy. No
+same-round sibling output is read. The example disables personal conversation
+context because previous answers are already present in the formatted input.
+Default string-input Mesh behavior is unchanged. Use `max_workers=1` on both
+Mesh groups for backends that require serialized inference.
 
 Parallel branches must have distinct agent, group, and transform instances;
 sharing the same transform within one pipeline branch is allowed. This also
@@ -300,17 +376,28 @@ parallel = ml.ParallelMultiagent(agents, max_workers=3)
 responses = parallel.query("What conclusion is supported by the evidence?", use_context=False)
 detail = parallel.history()
 
-answer = ml.MajorityVote()(responses)
-# Equivalent: ml.MajorityVote().aggregate(responses)
+response = ml.ConcatAggregate()(responses)
+# Equivalent: ml.ConcatAggregate().aggregate(responses)
 print([response.content for response in responses])
-print(answer)
+print(response.content)
 print(detail[-1]["usage"])
 ```
 
-`MajorityVote` selects the most frequent exact response text. Comparisons preserve
-case and whitespace; ties select the text occurring first in the input list.
-A strict majority is not required. Extract decision labels before voting if
-responses contain explanations that should not distinguish votes.
+`ConcatAggregate` creates a single `Response` without model inference:
+
+```text
+[agent 1]
+First response content
+
+[agent 2]
+Second response content
+```
+
+Numbers start at one and follow iteration order; they are positional labels, not
+agent IDs from metadata. Contents, whitespace, duplicates, and empty response
+contents are preserved. Sections are joined with two newline characters.
+The new response has an empty `prompt`, `agent_id=None`, and no reasoning or generation metrics;
+source prompts, reasoning, and costs remain with the original responses.
 
 `LLMAggregate` instead makes one model call to synthesize the candidates:
 
@@ -319,16 +406,29 @@ aggregator = ml.LLMAggregate(
     model,
     system_prompt="Evaluate these proposed answers to question X and return the best final answer.",
 )
-answer = aggregator(responses)
+response = aggregator(responses)
 detail = aggregator.history()
-print(answer)
+print(response.content)
 print(detail[-1]["usage"])
 ```
 
-Both aggregators accept a non-empty sequence of strings, raw `Response` objects,
-or a mixture. `Aggregate` is an abstract base: implement `aggregate(responses)`
-to define another reduction. `LLMAggregate.aggregate_response(responses)` returns
-the raw synthesis response. Its calls exclude previous aggregation context while
+The `Aggregate` contract is `Iterable[Response] -> Response`. Both built-in
+aggregators accept non-empty lists, tuples, iterators, and generators of `Response`
+objects, consuming them once in iteration order. Strings and mixed string/Response
+inputs are rejected. An empty iterable raises `ValueError`; invalid items or
+non-string `content` raise `TypeError` before any model call.
+
+```python
+response = ml.ConcatAggregate()(item for item in responses)
+```
+
+Implement `aggregate(responses)` to define a custom reduction. The protected
+`_contents(responses)` helper validates this contract and collects contents in
+one pass. `aggregator(responses)` delegates to `aggregator.aggregate(responses)`.
+Pipeline's `query()` collection input remains a non-empty `list[Response]`.
+
+`LLMAggregate.aggregate(responses)` returns
+the raw synthesis response, including its model usage. Its calls exclude previous aggregation context while
 retaining an independent execution history. Its usage measures only the synthesis
 call; the parallel group's history records participant usage separately.
 
@@ -337,7 +437,7 @@ provided that each branch returns one answer. Reduce a parallel collection
 before handing it to another single-answer participant. For example:
 
 ```python
-response = editor.query(ml.MajorityVote()(responses))
+response = editor.query(ml.ConcatAggregate()(responses).content)
 print(response.content)
 ```
 
@@ -406,8 +506,19 @@ remote provider.
 
 ## Agent state semantics
 
-`Agent.generate()` returns a raw `Response` without changing context or query
-history:
+`Agent.generate()` returns a `Response` with `agent_id` set to the calling
+agent's `id`, without changing context or query history. `Agent.query()` uses
+the same assignment. A new response is returned so a shared backend's response
+object is not retagged in place. `Response.agent_id` is optional and defaults
+to `None`, preserving existing constructors and direct model calls. Wrappers
+preserve it; `LLMAggregate` returns its internal judge agent's ID.
+
+```python
+response = agent.query("Question")
+print(response.agent_id)  # agent.id
+```
+
+For generation without recording a query:
 
 ```python
 response = agent.generate("One stateless request")
@@ -435,7 +546,7 @@ turns and saving new turns are independent. To disable both, pass
 `chat()` and `chat_response()` have been replaced by `query()`. Read
 `query(...).content` when answer text is needed. For parallel groups, use
 `[response.content for response in responses]`.
-`SequentialMultiagent.query()` and `Pipeline.query()` return one response with
+`SequentialMultiagent.query()` and single-output `Pipeline.query()` return one response with
 token counts and generation time summed across query participants.
 `ParallelMultiagent.query()` returns an ordered
 list of participant responses; group usage is available in `history()`.
@@ -471,8 +582,8 @@ MASLab is licensed under the MIT License. See [LICENSE](LICENSE).
 
 `MeshMultiagent` executes synchronous parallel rounds. `loop` includes the first
 round, where every participant receives the original question. In subsequent
-rounds, each participant receives a JSON message with `question` and `responses`:
-the original question and all previous-round responses (including its own), in
+rounds, each participant receives a JSON message containing only `responses`:
+all previous-round responses (including its own), without the original question, in
 participant order, identified by `agent_id`. The context arguments supplied to
 `mesh.query()` apply to every participant.
 

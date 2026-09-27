@@ -64,9 +64,9 @@ def main() -> None:
     ])
     responses = parallel.query("Which fruit is supported by your facts?", use_context=False)
     print("Parallel answers:", [response.content for response in responses])
-    print("Majority vote:", ml.MajorityVote()(responses))
+    print("Combined responses:", ml.ConcatAggregate()(responses).content)
     aggregator = ml.LLMAggregate(model)
-    print("LLM aggregator (demo backend):", aggregator(responses))
+    print("LLM aggregator (demo backend):", aggregator(responses).content)
     print("Parallel usage:", parallel.history()[-1]["usage"])
     print("Aggregation usage:", aggregator.history()[-1]["usage"])
 

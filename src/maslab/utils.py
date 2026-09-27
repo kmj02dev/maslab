@@ -5,7 +5,7 @@ from typing import Any
 
 
 def dialog(history: Iterable[Mapping[str, Any]]) -> str:
-    """Return completed agent outputs as ``[agent_id]\ncontent`` blocks.
+    """Return completed outputs as ``[loop i | agent_id]\ncontent`` blocks.
 
     Accepts Agent, SequentialMultiagent, ParallelMultiagent, and Pipeline
     histories, including snapshots loaded from JSON. Nested groups are expanded
@@ -26,7 +26,8 @@ def dialog(history: Iterable[Mapping[str, Any]]) -> str:
             if "steps" in entry:
                 visit(entry["steps"])
             elif entry.get("status") == "completed":
-                turns.append(f"[{entry['agent_id']}]\n{entry['content']}")
+                loop = entry.get("loop", 1)
+                turns.append(f"[loop {loop} | {entry['agent_id']}]\n{entry['content']}")
 
     visit(history)
     return "\n\n".join(turns)

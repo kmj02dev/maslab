@@ -7,7 +7,7 @@ from typing import Any, Generic, TypeVar
 from ..types import Response
 
 
-ResponseT = TypeVar("ResponseT", Response, list[Response])
+ResponseT = TypeVar("ResponseT", bound=Response | list[Response])
 
 
 class Multiagent(ABC, Generic[ResponseT]):
@@ -19,6 +19,7 @@ class Multiagent(ABC, Generic[ResponseT]):
     """
 
     returns_multiple = False
+    accepts_multiple = False
 
     def __init__(self, *, id: str):
         if not isinstance(id, str) or not id.strip():

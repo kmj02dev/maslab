@@ -4,7 +4,7 @@ from threading import Barrier, Event
 import pytest
 
 from maslab import (
-    Agent, LLMAggregate, MajorityVote, Multiagent, ParallelMultiagent,
+    Agent, LLMAggregate, ConcatAggregate, Multiagent, ParallelMultiagent,
     Response, SequentialMultiagent,
 )
 
@@ -40,6 +40,7 @@ def test_parallel_calls_overlap_but_results_and_history_follow_input_order():
     responses = group.query("same question")
     assert all(isinstance(response, Response) for response in responses)
     assert [response.content for response in responses] == ["0", "1", "2"]
+    assert [response.agent_id for response in responses] == ["0", "1", "2"]
     assert all(response.input_tokens == response.output_tokens == 1 for response in responses)
     assert not hasattr(group, "chat")
     assert not hasattr(group, "chat_response")
@@ -221,10 +222,10 @@ def test_parallel_collections_require_explicit_reduction_before_single_answer_ha
 def test_parallel_results_feed_both_aggregator_implementations():
     group = ParallelMultiagent([make_agent("A"), make_agent("B"), make_agent("A")])
     responses = group.query("question")
-    assert MajorityVote()(responses) == "A"
+    assert ConcatAggregate()(responses).content == "[agent 1]\nA\n\n[agent 2]\nB\n\n[agent 3]\nA"
     judge = FixedModel("final answer")
     aggregator = LLMAggregate(judge)
-    assert aggregator(responses) == "final answer"
+    assert aggregator(responses).content == "final answer"
     assert json.loads(judge.calls[0][-1]["content"]) == [response.content for response in responses]
     assert group.history()[0]["usage"]["total_tokens"] == 6
     assert aggregator.history()[0]["usage"]["total_tokens"] == 2

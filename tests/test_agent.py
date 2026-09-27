@@ -1,6 +1,6 @@
 import pytest
 
-from maslab import Agent, Response
+from maslab import Agent, ParallelMultiagent, Response
 
 from conftest import FixedModel
 
@@ -11,6 +11,7 @@ def test_generate_does_not_mutate_context():
     response = agent.generate("hello")
 
     assert response.content
+    assert response.agent_id == "0"
     assert agent.context == [{"role": "system", "content": "system"}]
 
 
@@ -54,6 +55,7 @@ def test_query_without_message_uses_default_request_and_records_details():
 
     response = agent.query()
     assert response.content == "answer"
+    assert response.agent_id == "writer"
     assert response.prompt == model.calls[0]
     assert response.input_tokens == response.output_tokens == 1
     assert response.generation_time == 0.01
@@ -99,6 +101,7 @@ def test_history_is_independent_of_context_policy_and_returned_responses():
     assert agent.context == [{"role": "system", "content": "system"}]
     response.prompt.clear()
     response.content = "changed"
+    response.agent_id = "changed"
     detail = agent.history()
     detail[0]["prompt"].clear()
     detail[0]["usage"]["total_tokens"] = 999
@@ -106,6 +109,7 @@ def test_history_is_independent_of_context_policy_and_returned_responses():
 
     assert len(agent.history()) == 2
     assert agent.history()[0]["content"] == "answer"
+    assert agent.history()[0]["agent_id"] == "0"
     assert agent.history()[0]["prompt"]
     assert agent.history()[0]["usage"]["total_tokens"] == 2
 
@@ -177,3 +181,43 @@ def test_generate_rejects_none_without_model_call():
     with pytest.raises(TypeError, match="use_context"):
         Agent("a", model).generate("hello", use_context=None)
     assert model.calls == []
+
+
+def test_response_agent_id_is_optional_and_round_trips_with_existing_arguments():
+    from dataclasses import asdict
+
+    response = Response([], "answer", "reason", 3, 2, 0.5)
+    assert response.agent_id is None
+    response.agent_id = "writer"
+    assert Response(**asdict(response)) == response
+    assert asdict(response)["agent_id"] == "writer"
+    assert FixedModel().respond([{"role": "user", "content": "Q"}]).agent_id is None
+
+
+def test_agents_tag_shared_backend_responses_without_mutating_them():
+    class ReusingModel(FixedModel):
+        def __init__(self):
+            super().__init__()
+            self.response = Response(
+                prompt=[{"role": "user", "content": "Q"}],
+                content="answer", reasoning="reason", input_tokens=3,
+                output_tokens=2, generation_time=0.5, agent_id="backend",
+            )
+
+        def respond(self, messages):
+            return self.response
+
+    model = ReusingModel()
+    agents = [Agent("first", model), Agent("second", model)]
+    responses = ParallelMultiagent(agents).query("Q", use_context=False, update_context=False)
+    assert [response.agent_id for response in responses] == ["first", "second"]
+    assert model.response.agent_id == "backend"
+    assert responses[0] is not responses[1]
+    for agent, response in zip(agents, responses):
+        assert response is not model.response
+        assert response.content == "answer"
+        assert response.reasoning == "reason"
+        assert response.input_tokens == 3 and response.output_tokens == 2
+        assert response.generation_time == 0.5
+        assert agent.history()[0]["agent_id"] == agent.id
+        assert agent.context == []

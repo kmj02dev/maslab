@@ -25,7 +25,8 @@ def run_isolated(source):
 
 @pytest.mark.parametrize("entrypoint", [
     "import maslab",
-    "from maslab.core import Agent, Model, Response, MajorityVote",
+    "from maslab.core import Agent, Model, Response, ConcatAggregate",
+    "from maslab import CumulativeMultiagent",
     "from maslab.core.agents.agent import Agent; from maslab.core.multiagents import ParallelMultiagent; from maslab.core.aggregators import LLMAggregate",
     "from maslab.core.model import Model; from maslab.core.types import ChatMessage, Response, Usage",
 ])
@@ -50,7 +51,7 @@ ENTRYPOINT
 import maslab
 from maslab.core import (
     Agent, Model, Response, LLMAggregate,
-    MajorityVote, ParallelMultiagent, Pipeline, SequentialMultiagent, Transform,
+    ConcatAggregate, ParallelMultiagent, Pipeline, SequentialMultiagent, Transform,
 )
 
 class Echo(Model):
@@ -69,7 +70,7 @@ assert get_type_hints(Model.respond)["return"] is Response
 assert get_type_hints(Agent.query)["return"] is Response
 assert get_type_hints(Transform.transform)["return"] is Response
 assert get_type_hints(SequentialMultiagent.query)["return"] is Response
-assert get_type_hints(Pipeline.query)["return"] is Response
+assert get_type_hints(Pipeline.query)["return"] == (Response | list[Response])
 assert get_type_hints(ParallelMultiagent.query)["return"] == list[Response]
 first = Agent("first", Echo("A"))
 second = Agent("second", Echo("B"))
@@ -77,9 +78,9 @@ assert Pipeline([SequentialMultiagent([first, second]), Exclaim()]).query("quest
 responses = ParallelMultiagent([first, second]).query("question")
 assert all(isinstance(response, Response) for response in responses)
 assert [response.content for response in responses] == ["A", "B"]
-assert MajorityVote()(responses) == "A"
+assert ConcatAggregate()(iter(responses)).content.splitlines() == ["[agent 1]", "A", "", "[agent 2]", "B"]
 aggregator = LLMAggregate(Echo("final"))
-assert aggregator(responses) == "final"
+assert aggregator(responses).content == "final"
 assert len(aggregator.history()) == 1
 assert not any(
     loaded == name or loaded.startswith(name + ".")
@@ -126,7 +127,7 @@ def test_direct_model_import_loads_only_the_selected_adapter():
     ("maslab.core", "maslab.core.multiagents.pipeline", ["Pipeline"]),
     ("maslab.core", "maslab.core.types", ["ChatMessage", "Response", "Usage"]),
     ("maslab.core.agents", "maslab.core.agents.agent", ["Agent"]),
-    ("maslab.core", "maslab.core.aggregators", ["Aggregate", "MajorityVote", "LLMAggregate"]),
+    ("maslab.core", "maslab.core.aggregators", ["Aggregate", "ConcatAggregate", "LLMAggregate"]),
     ("maslab.core", "maslab.core.multiagents", ["Multiagent", "SequentialMultiagent", "ParallelMultiagent"]),
 ])
 def test_package_exports_resolve_to_the_implementation_classes(public_module, implementation_module, names):
@@ -158,6 +159,8 @@ def test_removed_compatibility_modules_cannot_be_imported():
             "maslab.aggregators.aggregator",
             "maslab.aggregators.majority_vote",
             "maslab.aggregators.llm_aggregator",
+            "maslab.core.aggregators.majority_vote",
+            "maslab.core.aggregators.peer_aggregate",
         )
         for module_name in removed_modules:
             try:
@@ -167,7 +170,7 @@ def test_removed_compatibility_modules_cannot_be_imported():
             else:
                 raise AssertionError("Compatibility module is still importable: " + module_name)
 
-        from maslab import Agent, ParallelMultiagent, MajorityVote
+        from maslab import Agent, ParallelMultiagent, ConcatAggregate
         from maslab.core import Agent as CoreAgent
         assert Agent is CoreAgent
     """)

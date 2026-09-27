@@ -1,6 +1,7 @@
 """Single-agent conversations and execution history."""
 
 from copy import deepcopy
+from dataclasses import replace
 from typing import Any
 
 from ..model import Model
@@ -38,7 +39,7 @@ class Agent:
         message: str = "Continue.",
         use_context: bool = True,
     ) -> Response:
-        """Generate a raw response without changing context or query history."""
+        """Generate a response tagged with this agent ID without recording a query."""
         if not isinstance(message, str):
             raise TypeError("message must be a string")
         if not isinstance(use_context, bool):
@@ -48,7 +49,7 @@ class Agent:
             "role": "user",
             "content": message,
         })
-        return self.model.respond(messages)
+        return replace(self.model.respond(messages), agent_id=self.id)
 
     def query(
         self,

@@ -21,11 +21,12 @@ def test_round_barrier_broadcast_order_usage_and_final_results():
     group = MeshMultiagent(agents, loop=3)
     results = group.query("question", update_context=False)
     assert [r.content for r in results] == ["0:3", "1:3", "2:3"]
+    assert [r.agent_id for r in results] == ["0", "1", "2"]
     for agent in agents:
         assert agent.model.calls[0][-1]["content"] == "question"
         for round_index in [1, 2]:
             payload = json.loads(agent.model.calls[round_index][-1]["content"])
-            assert payload == {"question": "question", "responses": [
+            assert payload == {"responses": [
                 {"agent_id": str(i), "content": f"{i}:{round_index}"} for i in range(3)
             ]}
     history = group.history()

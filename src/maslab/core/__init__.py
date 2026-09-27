@@ -4,16 +4,17 @@ from .transforms import Transform, Prefix, Suffix, Wrap
 from .model import Model
 from .types import ChatMessage, Response, Usage
 from .agents import Agent
-from .aggregators import Aggregate, LLMAggregate, MajorityVote
-from .multiagents import Multiagent, MeshMultiagent, ParallelMultiagent, SequentialMultiagent
+from .aggregators import Aggregate, ConcatAggregate, LLMAggregate
+from .multiagents import Multiagent, MeshMultiagent, ParallelMultiagent, SequentialMultiagent, CumulativeMultiagent
 from .multiagents import Pipeline
 
 __all__ = [
     "Agent",
     "Aggregate",
     "ChatMessage",
+    "CumulativeMultiagent",
     "LLMAggregate",
-    "MajorityVote",
+    "ConcatAggregate",
     "Model",
     "Multiagent",
     "ParallelMultiagent",

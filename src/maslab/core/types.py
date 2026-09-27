@@ -17,6 +17,7 @@ class Response:
     input_tokens: int | None = None
     output_tokens: int | None = None
     generation_time: float | None = None
+    agent_id: str | None = None
 
 
 @dataclass(frozen=True)

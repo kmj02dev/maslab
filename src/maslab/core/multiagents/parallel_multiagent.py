@@ -5,7 +5,8 @@ from copy import deepcopy
 from typing import Any, Sequence
 
 from ..agents import Agent
-from .._history import _query_entry
+from ..aggregators import Aggregate
+from .._history import _query_entry, _message_snapshot
 from ..types import Response
 from .multiagent import Multiagent
 
@@ -13,8 +14,10 @@ from .multiagent import Multiagent
 class ParallelMultiagent(Multiagent[list[Response]]):
     """Send the same message to all participants and return answers in input order.
 
-    Participants never receive sibling responses. Their own context policies
-    remain effective. Branches must use distinct Agent/Multiagent/Transform instances;
+    Collection-aware branches can instead receive a Response list, copied per
+    branch, for an explicit Aggregate-first pipeline. No current sibling output
+    is forwarded. Participants' own context policies
+    remain effective. Branches must use distinct Agent/Multiagent/Transform/Aggregate instances;
     shared model backends must support concurrent ``respond`` calls.
     Completed work is recorded even when another branch fails. All submitted
     branches finish before the first failure in participant order is raised.
@@ -42,6 +45,10 @@ class ParallelMultiagent(Multiagent[list[Response]]):
         self.max_workers = max_workers
         self._validate_independent_branches()
 
+    @property
+    def accepts_multiple(self):
+        return all(isinstance(agent, Multiagent) and agent.accepts_multiple for agent in self.agents)
+
     def _validate_independent_branches(self):
         seen = set()
         for branch in self.agents:
@@ -55,11 +62,13 @@ class ParallelMultiagent(Multiagent[list[Response]]):
                 branch_ids.add(identity)
                 if isinstance(participant, Multiagent):
                     pending.extend(getattr(participant, "steps", getattr(participant, "agents", ())))
+                elif isinstance(participant, Aggregate) and isinstance(getattr(participant, "agent", None), Agent):
+                    pending.append(participant.agent)
             if seen.intersection(branch_ids):
                 raise ValueError("parallel branches must not share Agent, Multiagent, or Transform instances")
             seen.update(branch_ids)
 
-    def _record(self, message: str, steps: list[dict[str, Any]], *, failed: bool):
+    def _record(self, message: str | list[Response], steps: list[dict[str, Any]], *, failed: bool):
         usage = {
             "input_tokens": sum(step["usage"]["input_tokens"] for step in steps),
             "output_tokens": sum(step["usage"]["output_tokens"] for step in steps),
@@ -73,8 +82,8 @@ class ParallelMultiagent(Multiagent[list[Response]]):
         usage["generation_time"] = sum(times) if times else None
         self._history.append({
             "agent_id": self.id,
-            "message": message,
-            "prompt": [{"role": "user", "content": message}],
+            "message": _message_snapshot(message),
+            "prompt": [{"role": "user", "content": message}] if isinstance(message, str) else [],
             "content": [step["content"] for step in steps if step["status"] == "completed"],
             "reasoning": None,
             "usage": usage,
@@ -84,12 +93,15 @@ class ParallelMultiagent(Multiagent[list[Response]]):
 
     def query(
         self,
-        message: str = "Continue.",
+        message: str | list[Response] = "Continue.",
         use_context: bool = True,
         update_context: bool = True,
     ) -> list[Response]:
-        if not isinstance(message, str):
-            raise TypeError("message must be a string")
+        if not isinstance(message, str) and not (
+            self.accepts_multiple and isinstance(message, list) and message
+            and all(isinstance(r, Response) and isinstance(r.content, str) for r in message)
+        ):
+            raise TypeError("message must be a string, or a Response list for collection-aware branches")
         if not isinstance(use_context, bool):
             raise TypeError("use_context must be a boolean")
         if not isinstance(update_context, bool):
@@ -103,7 +115,7 @@ class ParallelMultiagent(Multiagent[list[Response]]):
             futures = {
                 executor.submit(
                     agent.query,
-                    message,
+                    deepcopy(message),
                     use_context=use_context,
                     update_context=update_context,
                 ): index

@@ -1,6 +1,6 @@
 import pytest
 
-from maslab import Agent, Multiagent, ParallelMultiagent, Pipeline, Response, SequentialMultiagent
+from maslab import Agent, CumulativeMultiagent, Multiagent, ParallelMultiagent, Pipeline, Prefix, Response, SequentialMultiagent, Suffix, Wrap
 
 from conftest import FixedModel
 
@@ -240,3 +240,21 @@ def test_none_context_flag_is_rejected_at_every_query_entry(kind):
         participant.query("hello", use_context=None)
     assert agent.model.calls == []
     assert participant.history() == []
+
+
+@pytest.mark.parametrize("group_class", [SequentialMultiagent, CumulativeMultiagent])
+def test_nested_groups_and_wrappers_preserve_response_author_and_group_history(group_class):
+    group = group_class([make_agent("a"), make_agent("b")], id="inner")
+    wrapped = Pipeline([group, Prefix("<"), Suffix(">"), Wrap("[", "]")], id="wrapped")
+    outer = SequentialMultiagent([wrapped], id="outer")
+
+    response = outer.query("Q", use_context=False, update_context=False)
+
+    assert response.agent_id == "b"
+    assert outer.history()[0]["agent_id"] == "outer"
+    assert outer.history()[0]["steps"][0]["agent_id"] == "wrapped"
+    assert wrapped.history()[0]["steps"][0]["agent_id"] == "inner"
+    assert group.history()[0]["steps"][-1]["agent_id"] == "b"
+    for step in wrapped.history()[0]["steps"][1:]:
+        assert step["input"]["agent_id"] == step["output"]["agent_id"] == "b"
+    assert response.input_tokens == response.output_tokens == 2
