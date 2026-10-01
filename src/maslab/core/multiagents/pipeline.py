@@ -37,7 +37,12 @@ class Pipeline(Multiagent[Response | list[Response]]):
 
     @property
     def returns_multiple(self):
-        return isinstance(self.steps[-1], Multiagent) and self.steps[-1].returns_multiple
+        return isinstance(self.steps[-1], (Multiagent, Transform)) and self.steps[-1].returns_multiple
+
+    @property
+    def returns_prompts(self):
+        last = self.steps[-1]
+        return isinstance(last, (Multiagent, Transform)) and last.returns_prompts
 
     @property
     def accepts_multiple(self):
@@ -61,19 +66,29 @@ class Pipeline(Multiagent[Response | list[Response]]):
         self._validate_flow(self.accepts_multiple)
 
     def _validate_flow(self, multiple):
+        distributed = False
         for _ in range(self.loop):
             for step in self.steps:
                 if isinstance(step, Aggregate):
                     if not multiple:
                         raise TypeError("Aggregate steps require a response list")
                     multiple = False
+                    distributed = False
                 elif isinstance(step, Transform):
                     if multiple:
                         raise TypeError("reduce response lists with an Aggregate before a Transform")
+                    multiple = step.returns_multiple
+                    distributed = step.returns_prompts
+                    if distributed and not multiple:
+                        raise TypeError("returns_prompts requires returns_multiple")
                 else:
-                    if multiple and not (isinstance(step, Multiagent) and step.accepts_multiple):
+                    if multiple and distributed:
+                        if not isinstance(step, Multiagent) or not step.accepts_prompts:
+                            raise TypeError("broadcast output requires a prompt-aware participant or Aggregate")
+                    elif multiple and not (isinstance(step, Multiagent) and step.accepts_multiple):
                         raise TypeError("reduce response lists with an Aggregate before single-message queries")
                     multiple = isinstance(step, Multiagent) and step.returns_multiple
+                    distributed = isinstance(step, Multiagent) and step.returns_prompts
 
     @staticmethod
     def _run_aggregate(aggregate, responses, records, loop_idx, step_idx):
@@ -105,7 +120,7 @@ class Pipeline(Multiagent[Response | list[Response]]):
         records: list[dict[str, Any]],
         loop_idx: int,
         step_idx: int,
-    ) -> Response:
+    ) -> Response | list[Response]:
         record = {
             "kind": "transform",
             "name": type(transform).__name__,
@@ -118,9 +133,14 @@ class Pipeline(Multiagent[Response | list[Response]]):
         records.append(record)
         try:
             transformed = transform.transform(deepcopy(response))
-            if not isinstance(transformed, Response):
+            if transform.returns_multiple:
+                if not isinstance(transformed, list) or not transformed or not all(
+                    isinstance(item, Response) and isinstance(item.content, str) for item in transformed
+                ):
+                    raise TypeError("Transform must return a non-empty list of Response objects with string content")
+            elif not isinstance(transformed, Response):
                 raise TypeError("Transform.transform() must return a Response")
-            if not isinstance(transformed.content, str):
+            elif not isinstance(transformed.content, str):
                 raise TypeError("Transform output content must be a string")
             # A transform may retain its result. Keep subsequent execution isolated.
             transformed = deepcopy(transformed)
@@ -153,6 +173,7 @@ class Pipeline(Multiagent[Response | list[Response]]):
         response_list = isinstance(message, list) and not prompts
         self._validate_flow(response_list)
         records = []
+        distributed = False
         current_response = deepcopy(message) if response_list else None
         try:
             for loop_idx in range(1, self.loop + 1):
@@ -161,21 +182,26 @@ class Pipeline(Multiagent[Response | list[Response]]):
                         current_response = self._run_aggregate(
                             step, current_response, records, loop_idx, step_idx,
                         )
+                        distributed = False
                     elif isinstance(step, Transform):
                         assert current_response is not None
                         current_response = self._run_transform(
                             step, current_response, records, loop_idx, step_idx,
                         )
+                        distributed = step.returns_prompts
                     else:
                         current_message = (message if current_response is None else
                                            current_response if isinstance(current_response, list)
                                            else current_response.content)
+                        if distributed:
+                            current_message = [item.content for item in current_response]
                         current_response = _query_step(
                             step, current_message, records,
                             loop_idx=loop_idx, step_idx=step_idx,
                             use_context=use_context, update_context=update_context,
                             allow_multiple=True,
                         )
+                        distributed = isinstance(step, Multiagent) and step.returns_prompts
         except Exception as error:
             _finish_sequence(self._history, self.id, message, records, current_response, error=error)
             raise

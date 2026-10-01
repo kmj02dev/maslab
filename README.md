@@ -244,6 +244,48 @@ There are no built-in initial decisions, votes, or stopping rules.
 
 ## Pipelines and response transformations
 
+### Broadcast transforms
+
+`Broadcast(count)` and `WrapBroadcast(prefix=None, suffix=None)` transform one
+`Response` into a non-empty `list[Response]` without calling a model.
+`Broadcast` requires a positive integer count (not bool). `WrapBroadcast` accepts
+`str | list[str] | None` on each side: strings are shared, None is empty, and list
+length determines the output count. Two lists must have equal lengths; empty
+lists and non-string elements are rejected. Without lists it produces one output.
+Whitespace is preserved exactly. Each output has an independent copy of the
+source prompt and new content; usage, reasoning, and agent identity are not copied.
+
+```python
+from maslab import Agent, ParallelMultiagent, Pipeline, ConcatAggregate, WrapBroadcast
+
+tasks = ["Task with private fact A", "Task with private fact B"]
+agents = [Agent(str(i), model) for i in range(len(tasks))]
+pipeline = Pipeline([
+    ParallelMultiagent(agents),
+    ConcatAggregate(),
+    WrapBroadcast(
+        prefix=[task + "\n\nSolutions:\n" for task in tasks],
+        suffix="\n\nReview the solutions and give an updated answer.",
+    ),
+], loop=2)
+review_prompts = pipeline.query(tasks, use_context=False, update_context=False)
+```
+
+Transforms declare `returns_multiple=True` for list output and
+`returns_prompts=True` when that output is intended for per-participant delivery.
+Both broadcast classes declare both flags. Pipeline converts these outputs to
+`list[str]` for a following query with `accepts_prompts=True`, including across
+loop boundaries and nested pipelines. A following Aggregate receives the full
+response list instead. Ordinary response collections retain their existing
+semantics. A prompt-producing output cannot feed a single Agent directly.
+Transforms still cannot be the first step of a pipeline.
+
+The final result above is the next review's prompt list, not the last round's
+model answers. Final broadcast outputs remain `list[Response]`; routing metadata
+belongs to pipeline steps, so a separately supplied response list does not
+automatically become a per-participant prompt list. Model usage remains in the
+pipeline history without being duplicated in generated prompts.
+
 `ParallelMultiagent.query()` accepts either a shared string or a non-empty
 `list[str]` with exactly one prompt per participant, in participant order.
 `Pipeline.query()` forwards this list when its first step supports
