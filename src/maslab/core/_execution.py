@@ -11,7 +11,7 @@ from .types import Response
 
 def _query_step(
     participant: Agent | Multiagent[Response],
-    message: str | list[Response],
+    message: str | list[str] | list[Response],
     records: list[dict[str, Any]],
     *,
     loop_idx: int,
@@ -48,7 +48,7 @@ def _query_step(
 def _finish_sequence(
     history: list[dict[str, Any]],
     id: str,
-    message: str | list[Response],
+    message: str | list[str] | list[Response],
     records: list[dict[str, Any]],
     current_response: Response | list[Response] | None,
     *,

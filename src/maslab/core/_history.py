@@ -38,7 +38,7 @@ def _response_snapshot(response: Response | list[Response]) -> dict[str, Any]:
     }
 
 
-def _query_entry(agent_id: str, message: str | list[Response], response: Response | list[Response]) -> dict[str, Any]:
+def _query_entry(agent_id: str, message: str | list[str] | list[Response], response: Response | list[Response]) -> dict[str, Any]:
     """Snapshot one completed query without exposing mutable model responses."""
     return {
         **_response_snapshot(response),
@@ -48,7 +48,7 @@ def _query_entry(agent_id: str, message: str | list[Response], response: Respons
     }
 
 
-def _message_snapshot(message: str | list[Response]):
+def _message_snapshot(message: str | list[str] | list[Response]):
     """Keep collection inputs JSON-serializable and independent of callers."""
-    return ([_response_snapshot(item) for item in message]
+    return ([_response_snapshot(item) if isinstance(item, Response) else item for item in message]
             if isinstance(message, list) else message)
