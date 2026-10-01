@@ -624,3 +624,25 @@ support concurrent calls. Use `max_workers=1` for a backend requiring serial cal
 
 
 External experiment documentation: [maslab-experiments](../../maslab-experiments/README.md).
+
+
+## CumulativeConcatAggregate
+
+`from maslab import CumulativeConcatAggregate` provides stateful concatenation.
+Each successful aggregate call appends one deep-copied round and returns all
+contents under `[round N | agent_id]` labels. Missing IDs use positional
+`agent 1`, `agent 2` labels. Duplicates, empty contents and whitespace are retained.
+
+`history()` returns independent `list[list[Response]]` snapshots, including
+source metadata; it is not the query-history schema consumed by `dialog()`.
+Use `dialog(pipeline.history())` for conversation display. `reset()` clears
+all rounds. Invalid input or failing generators leave state unchanged.
+
+Replace a ConcatAggregate step with this class to accumulate across iterations.
+State also persists across query calls regardless of context flags: create an
+instance per task or reset explicitly. Do not share it across concurrent runs.
+Only responses passed to aggregate are stored; final parallel outputs after
+the last aggregate are not captured automatically. There is no truncation.
+
+Returned Response has an empty prompt and default metadata, so source model
+costs are not charged again. Round numbers count aggregate calls.
