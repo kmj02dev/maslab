@@ -271,19 +271,17 @@ pipeline = Pipeline([
 review_prompts = pipeline.query(tasks, use_context=False, update_context=False)
 ```
 
-Transforms declare `returns_multiple=True` for list output and
-`returns_prompts=True` when that output is intended for per-participant delivery.
-Both broadcast classes declare both flags. Pipeline converts these outputs to
-`list[str]` for a following query with `accepts_prompts=True`, including across
-loop boundaries and nested pipelines. A following Aggregate receives the full
-response list instead. Ordinary response collections retain their existing
-semantics. A prompt-producing output cannot feed a single Agent directly.
+Transforms declare `returns_multiple=True` for list output. Pipeline passes
+response lists unchanged, including across loop boundaries and nested pipelines.
+ParallelMultiagent distributes response contents by index to ordinary participants,
+with matching list and participant counts required. When all branches accept
+response collections, whole-list delivery is preserved for compatibility.
+Aggregates receive the full response list. Broadcast output cannot feed a single
+Agent directly.
 Transforms still cannot be the first step of a pipeline.
 
 The final result above is the next review's prompt list, not the last round's
-model answers. Final broadcast outputs remain `list[Response]`; routing metadata
-belongs to pipeline steps, so a separately supplied response list does not
-automatically become a per-participant prompt list. Model usage remains in the
+model answers. Final broadcast outputs remain `list[Response]`; response distribution belongs to ParallelMultiagent rather than Pipeline. Model usage remains in the
 pipeline history without being duplicated in generated prompts.
 
 `ParallelMultiagent.query()` accepts either a shared string or a non-empty

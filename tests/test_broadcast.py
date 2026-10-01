@@ -52,7 +52,7 @@ def test_loop_distribution_history_and_usage():
     pipeline = Pipeline([ParallelMultiagent(agents), ConcatAggregate(),
                          WrapBroadcast(["task A\n", "task B\n"], "\nreview")], loop=2)
     results = pipeline.query(["task A", "task B"], use_context=False, update_context=False)
-    assert pipeline.returns_multiple and pipeline.returns_prompts
+    assert pipeline.returns_multiple
     for i, agent in enumerate(agents):
         assert agent.model.calls[1][-1]["content"] == ["task A\n", "task B\n"][i] + "[agent 1]\n0\n\n[agent 2]\n1\nreview"
     assert len(results) == 2
@@ -92,3 +92,15 @@ def test_invalid_transform_output_recorded(output):
     with pytest.raises(TypeError):
         pipeline.query("start")
     assert pipeline.history()[0]["steps"][-1]["status"] == "failed"
+
+
+def test_parallel_distributes_responses_and_pipeline_preserves_them():
+    agents = [Agent(str(i), FixedModel()) for i in range(2)]
+    parallel = ParallelMultiagent(agents)
+    inputs = [Response([], "A"), Response([], "B")]
+    Pipeline([parallel]).query(inputs, use_context=False, update_context=False)
+    assert [a.model.calls[0][-1]["content"] for a in agents] == ["A", "B"]
+    assert [r["content"] for r in parallel.history()[0]["message"]] == ["A", "B"]
+    with pytest.raises(ValueError, match="count"):
+        parallel.query([Response([], "only one")])
+    assert all(len(a.model.calls) == 1 for a in agents)
