@@ -244,6 +244,26 @@ There are no built-in initial decisions, votes, or stopping rules.
 
 ## Pipelines and response transformations
 
+`ParallelMultiagent.query()` accepts either a shared string or a non-empty
+`list[str]` with exactly one prompt per participant, in participant order.
+`Pipeline.query()` forwards this list when its first step supports
+`accepts_prompts` (including nested pipelines starting with a parallel group).
+Empty or mixed lists and unsupported first steps raise `TypeError`; prompt
+count mismatches raise `ValueError` before any branch runs.
+
+```python
+parallel = ParallelMultiagent([Agent("a", model), Agent("b", model)])
+pipeline = Pipeline([parallel, ConcatAggregate()])
+result = pipeline.query(["Question with private fact A", "Question with private fact B"])
+```
+
+This does not change `list[Response]` input or its `accepts_multiple` capability.
+String lists are used for the initial query only; subsequent steps and loop
+iterations consume the preceding output normally. To preserve each participant's
+original information during review with context disabled, place that information
+in its `Agent.system_prompt`. Group history stores the input list, while branch
+history records the individual prompt, including on failure.
+
 `Pipeline` composes queries and explicit response transformations.
 `SequentialMultiagent` performs only sequential queries. Both support `query()`,
 `history()`, and `loop`, and can be nested inside each other.

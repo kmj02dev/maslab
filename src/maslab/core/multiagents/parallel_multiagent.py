@@ -12,7 +12,10 @@ from .multiagent import Multiagent
 
 
 class ParallelMultiagent(Multiagent[list[Response]]):
-    """Send the same message to all participants and return answers in input order.
+    """Broadcast a string or distribute a prompt list, returning answers in order.
+
+    A non-empty list of strings supplies one prompt per participant and must
+    match the participant count. This is separate from Response-list input.
 
     Collection-aware branches can instead receive a Response list, copied per
     branch, for an explicit Aggregate-first pipeline. No current sibling output
@@ -24,6 +27,7 @@ class ParallelMultiagent(Multiagent[list[Response]]):
     """
 
     returns_multiple = True
+    accepts_prompts = True
 
     def __init__(
         self,
@@ -68,7 +72,7 @@ class ParallelMultiagent(Multiagent[list[Response]]):
                 raise ValueError("parallel branches must not share Agent, Multiagent, or Transform instances")
             seen.update(branch_ids)
 
-    def _record(self, message: str | list[Response], steps: list[dict[str, Any]], *, failed: bool):
+    def _record(self, message: str | list[str] | list[Response], steps: list[dict[str, Any]], *, failed: bool):
         usage = {
             "input_tokens": sum(step["usage"]["input_tokens"] for step in steps),
             "output_tokens": sum(step["usage"]["output_tokens"] for step in steps),
@@ -93,20 +97,24 @@ class ParallelMultiagent(Multiagent[list[Response]]):
 
     def query(
         self,
-        message: str | list[Response] = "Continue.",
+        message: str | list[str] | list[Response] = "Continue.",
         use_context: bool = True,
         update_context: bool = True,
     ) -> list[Response]:
-        if not isinstance(message, str) and not (
+        prompts = isinstance(message, list) and bool(message) and all(isinstance(item, str) for item in message)
+        if prompts and len(message) != len(self.agents):
+            raise ValueError("prompt count must match participant count")
+        if not isinstance(message, str) and not prompts and not (
             self.accepts_multiple and isinstance(message, list) and message
             and all(isinstance(r, Response) and isinstance(r.content, str) for r in message)
         ):
-            raise TypeError("message must be a string, or a Response list for collection-aware branches")
+            raise TypeError("message must be a string, a non-empty list of strings, or a Response list for collection-aware branches")
         if not isinstance(use_context, bool):
             raise TypeError("use_context must be a boolean")
         if not isinstance(update_context, bool):
             raise TypeError("update_context must be a boolean")
         self._validate_independent_branches()
+        messages = message if prompts else [message] * len(self.agents)
         responses = {}
         steps = {}
         errors = {}
@@ -115,7 +123,7 @@ class ParallelMultiagent(Multiagent[list[Response]]):
             futures = {
                 executor.submit(
                     agent.query,
-                    deepcopy(message),
+                    deepcopy(messages[index]),
                     use_context=use_context,
                     update_context=update_context,
                 ): index
@@ -129,7 +137,7 @@ class ParallelMultiagent(Multiagent[list[Response]]):
                     if not isinstance(response, Response):
                         raise TypeError("parallel participants must return a single Response")
                     responses[index] = response
-                    step = _query_entry(agent.id, message, response)
+                    step = _query_entry(agent.id, messages[index], response)
                     if isinstance(agent, Multiagent) and len(agent._history) > starts[index]:
                         step["steps"] = deepcopy(agent._history[-1].get("steps", []))
                 except Exception as error:
@@ -138,7 +146,7 @@ class ParallelMultiagent(Multiagent[list[Response]]):
                         step = deepcopy(agent._history[-1])
                     else:
                         # No model response or actual prompt is available on failure.
-                        step = _query_entry(agent.id, message, Response(prompt=[], content=""))
+                        step = _query_entry(agent.id, messages[index], Response(prompt=[], content=""))
                     step.update({
                         "status": "failed",
                         "error": {"type": type(error).__name__, "message": str(error)},

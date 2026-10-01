@@ -46,6 +46,11 @@ class Pipeline(Multiagent[Response | list[Response]]):
             isinstance(first, Multiagent) and first.accepts_multiple
         )
 
+    @property
+    def accepts_prompts(self):
+        first = self.steps[0]
+        return isinstance(first, Multiagent) and first.accepts_prompts
+
     def _validate_steps(self):
         if not self.steps:
             raise ValueError("a pipeline requires at least one step")
@@ -128,23 +133,27 @@ class Pipeline(Multiagent[Response | list[Response]]):
 
     def query(
         self,
-        message: str | list[Response] = "Continue.",
+        message: str | list[str] | list[Response] = "Continue.",
         use_context: bool = True,
         update_context: bool = True,
     ) -> Response | list[Response]:
-        if not isinstance(message, str) and not (
+        prompts = isinstance(message, list) and bool(message) and all(isinstance(item, str) for item in message)
+        if prompts and not self.accepts_prompts:
+            raise TypeError("first step does not accept per-participant prompts")
+        if not isinstance(message, str) and not prompts and not (
             isinstance(message, list) and message
             and all(isinstance(r, Response) and isinstance(r.content, str) for r in message)
         ):
-            raise TypeError("message must be a string or a non-empty list of Response objects")
+            raise TypeError("message must be a string or a non-empty list of strings or Response objects")
         if not isinstance(use_context, bool):
             raise TypeError("use_context must be a boolean")
         if not isinstance(update_context, bool):
             raise TypeError("update_context must be a boolean")
         self._validate_steps()
-        self._validate_flow(isinstance(message, list))
+        response_list = isinstance(message, list) and not prompts
+        self._validate_flow(response_list)
         records = []
-        current_response = deepcopy(message) if isinstance(message, list) else None
+        current_response = deepcopy(message) if response_list else None
         try:
             for loop_idx in range(1, self.loop + 1):
                 for step_idx, step in enumerate(self.steps, start=1):

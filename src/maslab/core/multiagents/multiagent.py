@@ -16,10 +16,12 @@ class Multiagent(ABC, Generic[ResponseT]):
     Collection-producing subclasses set ``returns_multiple = True``. A
     collection must be reduced with an Aggregate before a single-answer
     participant can consume it.
+    ``accepts_prompts`` separately marks support for per-participant string lists.
     """
 
     returns_multiple = False
     accepts_multiple = False
+    accepts_prompts = False
 
     def __init__(self, *, id: str):
         if not isinstance(id, str) or not id.strip():
