@@ -20,6 +20,7 @@ class Multiagent(ABC, Generic[ResponseT]):
     """
 
     returns_multiple = False
+    returns_prompts = False
     accepts_multiple = False
     accepts_prompts = False
 

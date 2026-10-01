@@ -15,11 +15,12 @@ class ParallelMultiagent(Multiagent[list[Response]]):
     """Broadcast a string or distribute a prompt list, returning answers in order.
 
     A non-empty list of strings supplies one prompt per participant and must
-    match the participant count. This is separate from Response-list input.
+    match the participant count. Response lists are also distributed by index,
+    using each response content as the corresponding participant message.
 
-    Collection-aware branches can instead receive a Response list, copied per
-    branch, for an explicit Aggregate-first pipeline. No current sibling output
-    is forwarded. Participants' own context policies
+    Collection-aware branches retain whole-list delivery. Otherwise Response
+    lists are distributed individually.
+    No current sibling output is forwarded. Participants' own context policies
     remain effective. Branches must use distinct Agent/Multiagent/Transform/Aggregate instances;
     shared model backends must support concurrent ``respond`` calls.
     Completed work is recorded even when another branch fails. All submitted
@@ -51,7 +52,7 @@ class ParallelMultiagent(Multiagent[list[Response]]):
 
     @property
     def accepts_multiple(self):
-        return all(isinstance(agent, Multiagent) and agent.accepts_multiple for agent in self.agents)
+        return True
 
     def _validate_independent_branches(self):
         seen = set()
@@ -102,19 +103,24 @@ class ParallelMultiagent(Multiagent[list[Response]]):
         update_context: bool = True,
     ) -> list[Response]:
         prompts = isinstance(message, list) and bool(message) and all(isinstance(item, str) for item in message)
-        if prompts and len(message) != len(self.agents):
+        response_list = isinstance(message, list) and bool(message) and all(
+            isinstance(item, Response) and isinstance(item.content, str) for item in message
+        )
+        if not isinstance(message, str) and not prompts and not response_list:
+            raise TypeError("message must be a string or a non-empty homogeneous list of strings or Responses")
+        collection_branches = all(
+            isinstance(agent, Multiagent) and agent.accepts_multiple for agent in self.agents
+        )
+        distribute_responses = response_list and not collection_branches
+        if (prompts or distribute_responses) and len(message) != len(self.agents):
             raise ValueError("prompt count must match participant count")
-        if not isinstance(message, str) and not prompts and not (
-            self.accepts_multiple and isinstance(message, list) and message
-            and all(isinstance(r, Response) and isinstance(r.content, str) for r in message)
-        ):
-            raise TypeError("message must be a string, a non-empty list of strings, or a Response list for collection-aware branches")
         if not isinstance(use_context, bool):
             raise TypeError("use_context must be a boolean")
         if not isinstance(update_context, bool):
             raise TypeError("update_context must be a boolean")
         self._validate_independent_branches()
-        messages = message if prompts else [message] * len(self.agents)
+        messages = ([item.content for item in message] if distribute_responses else
+                    message if prompts else [message] * len(self.agents))
         responses = {}
         steps = {}
         errors = {}

@@ -1,6 +1,6 @@
 """Model-independent agent execution, composition, aggregation, and history."""
 
-from .transforms import Transform, Prefix, Suffix, Wrap
+from .transforms import Broadcast, WrapBroadcast, Transform, Prefix, Suffix, Wrap
 from .model import Model
 from .types import ChatMessage, Response, Usage
 from .agents import Agent
@@ -22,7 +22,7 @@ __all__ = [
     "Pipeline",
     "Response",
     "SequentialMultiagent",
-    "Transform",
+    "Transform", "Broadcast", "WrapBroadcast",
     "Prefix",
     "Suffix",
     "Wrap",

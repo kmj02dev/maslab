@@ -37,7 +37,7 @@ class Pipeline(Multiagent[Response | list[Response]]):
 
     @property
     def returns_multiple(self):
-        return isinstance(self.steps[-1], Multiagent) and self.steps[-1].returns_multiple
+        return isinstance(self.steps[-1], (Multiagent, Transform)) and self.steps[-1].returns_multiple
 
     @property
     def accepts_multiple(self):
@@ -70,6 +70,7 @@ class Pipeline(Multiagent[Response | list[Response]]):
                 elif isinstance(step, Transform):
                     if multiple:
                         raise TypeError("reduce response lists with an Aggregate before a Transform")
+                    multiple = step.returns_multiple
                 else:
                     if multiple and not (isinstance(step, Multiagent) and step.accepts_multiple):
                         raise TypeError("reduce response lists with an Aggregate before single-message queries")
@@ -105,7 +106,7 @@ class Pipeline(Multiagent[Response | list[Response]]):
         records: list[dict[str, Any]],
         loop_idx: int,
         step_idx: int,
-    ) -> Response:
+    ) -> Response | list[Response]:
         record = {
             "kind": "transform",
             "name": type(transform).__name__,
@@ -118,9 +119,14 @@ class Pipeline(Multiagent[Response | list[Response]]):
         records.append(record)
         try:
             transformed = transform.transform(deepcopy(response))
-            if not isinstance(transformed, Response):
+            if transform.returns_multiple:
+                if not isinstance(transformed, list) or not transformed or not all(
+                    isinstance(item, Response) and isinstance(item.content, str) for item in transformed
+                ):
+                    raise TypeError("Transform must return a non-empty list of Response objects with string content")
+            elif not isinstance(transformed, Response):
                 raise TypeError("Transform.transform() must return a Response")
-            if not isinstance(transformed.content, str):
+            elif not isinstance(transformed.content, str):
                 raise TypeError("Transform output content must be a string")
             # A transform may retain its result. Keep subsequent execution isolated.
             transformed = deepcopy(transformed)
