@@ -64,7 +64,7 @@ class Pipeline(Multiagent[Response | list[Response]]):
         for _ in range(self.loop):
             for step in self.steps:
                 if isinstance(step, Aggregate):
-                    if not multiple:
+                    if not multiple and not step.accepts_single:
                         raise TypeError("Aggregate steps require a response list")
                     multiple = False
                 elif isinstance(step, Transform):
@@ -78,6 +78,11 @@ class Pipeline(Multiagent[Response | list[Response]]):
 
     @staticmethod
     def _run_aggregate(aggregate, responses, records, loop_idx, step_idx):
+        # Keep aggregate history inputs uniformly list-shaped for both modes.
+        if isinstance(responses, Response):
+            if not aggregate.accepts_single:
+                raise TypeError("Aggregate steps require a response list")
+            responses = [responses]
         record = _query_entry(type(aggregate).__name__, responses, Response(prompt=[], content=""))
         record.update(kind="aggregate", name=type(aggregate).__name__, loop=loop_idx,
                       step=step_idx, input=[_response_snapshot(r) for r in responses],
@@ -157,6 +162,8 @@ class Pipeline(Multiagent[Response | list[Response]]):
             raise TypeError("update_context must be a boolean")
         self._validate_steps()
         response_list = isinstance(message, list) and not prompts
+        if isinstance(self.steps[0], Aggregate) and not response_list:
+            raise TypeError("a leading Aggregate requires a response list")
         self._validate_flow(response_list)
         records = []
         current_response = deepcopy(message) if response_list else None

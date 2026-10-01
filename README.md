@@ -686,3 +686,22 @@ the last aggregate are not captured automatically. There is no truncation.
 
 Returned Response has an empty prompt and default metadata, so source model
 costs are not charged again. Round numbers count aggregate calls.
+
+### Single-response accumulation
+
+CumulativeConcatAggregate accepts either one Response or a non-empty iterable
+of Responses, through both aggregate() and the callable interface. Each call
+adds one batch. It declares accepts_single=True; other Aggregate subclasses
+default to False and keep their collection-only input contract.
+
+```python
+memory = CumulativeConcatAggregate()
+pipeline = Pipeline([agent_a, memory, agent_b, memory], loop=2)
+result = pipeline.query("Start", use_context=False, update_context=False)
+```
+
+The same memory instance retains outputs from all four agent calls. Pipeline
+normalizes a single aggregate input to a one-element list for execution and
+history snapshots; it does not clone the aggregate instance. No source costs
+are charged twice. A leading Aggregate still requires list[Response] input to
+Pipeline.query(); raw strings and standalone Response query inputs are unsupported.
