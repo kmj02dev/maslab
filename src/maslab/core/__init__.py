@@ -4,7 +4,7 @@ from .transforms import Broadcast, WrapBroadcast, Transform, Prefix, Suffix, Wra
 from .model import Model
 from .types import ChatMessage, Response, Usage
 from .agents import Agent
-from .aggregators import Aggregate, ConcatAggregate, LLMAggregate
+from .aggregators import Aggregate, ConcatAggregate, CumulativeConcatAggregate, LLMAggregate
 from .multiagents import Multiagent, MeshMultiagent, ParallelMultiagent, SequentialMultiagent, CumulativeMultiagent
 from .multiagents import Pipeline
 
@@ -15,6 +15,7 @@ __all__ = [
     "CumulativeMultiagent",
     "LLMAggregate",
     "ConcatAggregate",
+    "CumulativeConcatAggregate",
     "Model",
     "Multiagent",
     "ParallelMultiagent",
