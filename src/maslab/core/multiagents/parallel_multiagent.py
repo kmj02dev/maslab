@@ -67,6 +67,7 @@ class ParallelMultiagent(Multiagent[list[Response]]):
                 branch_ids.add(identity)
                 if isinstance(participant, Multiagent):
                     pending.extend(getattr(participant, "steps", getattr(participant, "agents", ())))
+                    pending.extend(getattr(participant, "transforms", ()))
                 elif isinstance(participant, Aggregate) and isinstance(getattr(participant, "agent", None), Agent):
                     pending.append(participant.agent)
             if seen.intersection(branch_ids):
