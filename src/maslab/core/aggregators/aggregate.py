@@ -13,6 +13,8 @@ class Aggregate(ABC):
     return the final Response. Implement aggregate in custom reducers.
     """
 
+    accepts_single = False
+
     def __call__(self, responses: Iterable[Response]) -> Response:
         return self.aggregate(responses)
 

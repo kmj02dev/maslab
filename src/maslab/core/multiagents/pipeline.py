@@ -37,7 +37,7 @@ class Pipeline(Multiagent[Response | list[Response]]):
 
     @property
     def returns_multiple(self):
-        return isinstance(self.steps[-1], Multiagent) and self.steps[-1].returns_multiple
+        return isinstance(self.steps[-1], (Multiagent, Transform)) and self.steps[-1].returns_multiple
 
     @property
     def accepts_multiple(self):
@@ -64,12 +64,13 @@ class Pipeline(Multiagent[Response | list[Response]]):
         for _ in range(self.loop):
             for step in self.steps:
                 if isinstance(step, Aggregate):
-                    if not multiple:
+                    if not multiple and not step.accepts_single:
                         raise TypeError("Aggregate steps require a response list")
                     multiple = False
                 elif isinstance(step, Transform):
                     if multiple:
                         raise TypeError("reduce response lists with an Aggregate before a Transform")
+                    multiple = step.returns_multiple
                 else:
                     if multiple and not (isinstance(step, Multiagent) and step.accepts_multiple):
                         raise TypeError("reduce response lists with an Aggregate before single-message queries")
@@ -77,6 +78,11 @@ class Pipeline(Multiagent[Response | list[Response]]):
 
     @staticmethod
     def _run_aggregate(aggregate, responses, records, loop_idx, step_idx):
+        # Keep aggregate history inputs uniformly list-shaped for both modes.
+        if isinstance(responses, Response):
+            if not aggregate.accepts_single:
+                raise TypeError("Aggregate steps require a response list")
+            responses = [responses]
         record = _query_entry(type(aggregate).__name__, responses, Response(prompt=[], content=""))
         record.update(kind="aggregate", name=type(aggregate).__name__, loop=loop_idx,
                       step=step_idx, input=[_response_snapshot(r) for r in responses],
@@ -105,7 +111,7 @@ class Pipeline(Multiagent[Response | list[Response]]):
         records: list[dict[str, Any]],
         loop_idx: int,
         step_idx: int,
-    ) -> Response:
+    ) -> Response | list[Response]:
         record = {
             "kind": "transform",
             "name": type(transform).__name__,
@@ -118,9 +124,14 @@ class Pipeline(Multiagent[Response | list[Response]]):
         records.append(record)
         try:
             transformed = transform.transform(deepcopy(response))
-            if not isinstance(transformed, Response):
+            if transform.returns_multiple:
+                if not isinstance(transformed, list) or not transformed or not all(
+                    isinstance(item, Response) and isinstance(item.content, str) for item in transformed
+                ):
+                    raise TypeError("Transform must return a non-empty list of Response objects with string content")
+            elif not isinstance(transformed, Response):
                 raise TypeError("Transform.transform() must return a Response")
-            if not isinstance(transformed.content, str):
+            elif not isinstance(transformed.content, str):
                 raise TypeError("Transform output content must be a string")
             # A transform may retain its result. Keep subsequent execution isolated.
             transformed = deepcopy(transformed)
@@ -151,6 +162,8 @@ class Pipeline(Multiagent[Response | list[Response]]):
             raise TypeError("update_context must be a boolean")
         self._validate_steps()
         response_list = isinstance(message, list) and not prompts
+        if isinstance(self.steps[0], Aggregate) and not response_list:
+            raise TypeError("a leading Aggregate requires a response list")
         self._validate_flow(response_list)
         records = []
         current_response = deepcopy(message) if response_list else None

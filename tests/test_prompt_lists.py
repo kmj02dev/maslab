@@ -37,7 +37,7 @@ def test_invalid_inputs_do_not_call_models(message, error, nested):
 def test_nested_pipeline_and_loop_broadcast():
     parallel = group()
     pipeline = Pipeline([Pipeline([parallel, ConcatAggregate()]), Wrap("Review:\n", "")], loop=2)
-    assert pipeline.accepts_prompts and not pipeline.accepts_multiple
+    assert pipeline.accepts_prompts and pipeline.accepts_multiple
     pipeline.query(["A", "B"], use_context=False, update_context=False)
     for i, agent in enumerate(parallel.agents):
         assert agent.model.calls[0][-1]["content"] == ["A", "B"][i]
