@@ -244,6 +244,46 @@ There are no built-in initial decisions, votes, or stopping rules.
 
 ## Pipelines and response transformations
 
+### Broadcast transforms
+
+`Broadcast(count)` and `WrapBroadcast(prefix=None, suffix=None)` transform one
+`Response` into a non-empty `list[Response]` without calling a model.
+`Broadcast` requires a positive integer count (not bool). `WrapBroadcast` accepts
+`str | list[str] | None` on each side: strings are shared, None is empty, and list
+length determines the output count. Two lists must have equal lengths; empty
+lists and non-string elements are rejected. Without lists it produces one output.
+Whitespace is preserved exactly. Each output has an independent copy of the
+source prompt and new content; usage, reasoning, and agent identity are not copied.
+
+```python
+from maslab import Agent, ParallelMultiagent, Pipeline, ConcatAggregate, WrapBroadcast
+
+tasks = ["Task with private fact A", "Task with private fact B"]
+agents = [Agent(str(i), model) for i in range(len(tasks))]
+pipeline = Pipeline([
+    ParallelMultiagent(agents),
+    ConcatAggregate(),
+    WrapBroadcast(
+        prefix=[task + "\n\nSolutions:\n" for task in tasks],
+        suffix="\n\nReview the solutions and give an updated answer.",
+    ),
+], loop=2)
+review_prompts = pipeline.query(tasks, use_context=False, update_context=False)
+```
+
+Transforms declare `returns_multiple=True` for list output. Pipeline passes
+response lists unchanged, including across loop boundaries and nested pipelines.
+ParallelMultiagent distributes response contents by index to ordinary participants,
+with matching list and participant counts required. When all branches accept
+response collections, whole-list delivery is preserved for compatibility.
+Aggregates receive the full response list. Broadcast output cannot feed a single
+Agent directly.
+Transforms still cannot be the first step of a pipeline.
+
+The final result above is the next review's prompt list, not the last round's
+model answers. Final broadcast outputs remain `list[Response]`; response distribution belongs to ParallelMultiagent rather than Pipeline. Model usage remains in the
+pipeline history without being duplicated in generated prompts.
+
 `ParallelMultiagent.query()` accepts either a shared string or a non-empty
 `list[str]` with exactly one prompt per participant, in participant order.
 `Pipeline.query()` forwards this list when its first step supports
@@ -646,3 +686,22 @@ the last aggregate are not captured automatically. There is no truncation.
 
 Returned Response has an empty prompt and default metadata, so source model
 costs are not charged again. Round numbers count aggregate calls.
+
+### Single-response accumulation
+
+CumulativeConcatAggregate accepts either one Response or a non-empty iterable
+of Responses, through both aggregate() and the callable interface. Each call
+adds one batch. It declares accepts_single=True; other Aggregate subclasses
+default to False and keep their collection-only input contract.
+
+```python
+memory = CumulativeConcatAggregate()
+pipeline = Pipeline([agent_a, memory, agent_b, memory], loop=2)
+result = pipeline.query("Start", use_context=False, update_context=False)
+```
+
+The same memory instance retains outputs from all four agent calls. Pipeline
+normalizes a single aggregate input to a one-element list for execution and
+history snapshots; it does not clone the aggregate instance. No source costs
+are charged twice. A leading Aggregate still requires list[Response] input to
+Pipeline.query(); raw strings and standalone Response query inputs are unsupported.

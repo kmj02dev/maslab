@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from importlib.metadata import PackageNotFoundError, version
 
 from .core import (
-    Agent, Aggregate, ChatMessage, CumulativeMultiagent, ConcatAggregate, CumulativeConcatAggregate, LLMAggregate,
+    Broadcast, WrapBroadcast, Agent, Aggregate, ChatMessage, CumulativeMultiagent, ConcatAggregate, CumulativeConcatAggregate, LLMAggregate,
     Model, Multiagent, MeshMultiagent, ParallelMultiagent, Pipeline, Response, SequentialMultiagent, Transform, Prefix, Suffix, Wrap, Usage,
 )
 
@@ -52,7 +52,7 @@ __all__ = [
     "Pipeline",
     "Response",
     "SequentialMultiagent",
-    "Transform",
+    "Transform", "Broadcast", "WrapBroadcast",
     "Prefix",
     "Suffix",
     "Wrap",

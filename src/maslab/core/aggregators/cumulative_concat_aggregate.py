@@ -16,14 +16,19 @@ class CumulativeConcatAggregate(Aggregate):
     Returned responses contain no source usage; history retains source metadata.
     """
 
+    accepts_single = True
+
     def __init__(self):
         self._rounds: list[list[Response]] = []
 
-    def aggregate(self, responses: Iterable[Response]) -> Response:
+    def __call__(self, responses: Response | Iterable[Response]) -> Response:
+        return self.aggregate(responses)
+
+    def aggregate(self, responses: Response | Iterable[Response]) -> Response:
         # Materialize once so generators are supported; validate before mutation.
         if isinstance(responses, (str, bytes)):
             raise TypeError("responses must be an iterable of Response objects")
-        current = list(responses)
+        current = [responses] if isinstance(responses, Response) else list(responses)
         self._contents(current)
         current = deepcopy(current)
         rounds = [*self._rounds, current]

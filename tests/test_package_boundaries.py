@@ -68,7 +68,7 @@ assert maslab.Agent is Agent
 assert get_type_hints(Agent.__init__)["model"] is Model
 assert get_type_hints(Model.respond)["return"] is Response
 assert get_type_hints(Agent.query)["return"] is Response
-assert get_type_hints(Transform.transform)["return"] is Response
+assert get_type_hints(Transform.transform)["return"] == Response | list[Response]
 assert get_type_hints(SequentialMultiagent.query)["return"] is Response
 assert get_type_hints(Pipeline.query)["return"] == (Response | list[Response])
 assert get_type_hints(ParallelMultiagent.query)["return"] == list[Response]

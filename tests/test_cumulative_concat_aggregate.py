@@ -38,6 +38,7 @@ def test_rounds_snapshots_reset_and_exports():
 @pytest.mark.parametrize("value,error", [
     ([], ValueError), ("", TypeError), ("bad", TypeError), (None, TypeError),
     ([Response([], "valid"), "bad"], TypeError), ([Response([], 12)], TypeError),
+    (Response([], 12), TypeError),
 ])
 def test_invalid_input_does_not_change_state(value, error):
     aggregate = CumulativeConcatAggregate()
@@ -77,3 +78,53 @@ def test_pipeline_accumulation_and_usage_across_queries():
     assert len(aggregate.history()) == 6
     aggregate.reset()
     assert aggregate.history() == []
+
+
+def test_single_and_multiple_inputs_share_memory():
+    aggregate = CumulativeConcatAggregate()
+    source = Response([], "one", agent_id="a")
+    aggregate(source)
+    source.content = "changed"
+    aggregate([Response([], "two"), Response([], "three")])
+    result = aggregate(Response([], "four"))
+    assert [len(batch) for batch in aggregate.history()] == [1, 2, 1]
+    assert "one" in result.content and "changed" not in result.content
+    assert all(word in result.content for word in ("two", "three", "four"))
+
+
+def test_shared_single_response_aggregate_in_pipeline():
+    class Fixed(Model):
+        def respond(self, messages):
+            return Response(list(messages), self.name, input_tokens=3, output_tokens=2)
+
+    a, b = Agent("a", Fixed("A")), Agent("b", Fixed("B"))
+    memory = CumulativeConcatAggregate()
+    pipeline = Pipeline([a, memory, b, memory], loop=2)
+    result = pipeline.query("start", use_context=False, update_context=False)
+    assert [batch[0].content for batch in memory.history()] == ["A", "B", "A", "B"]
+    assert "[round 2 | b]\nB" in a.history()[1]["message"]
+    assert "[round 4 | b]\nB" in result.content
+    assert result.input_tokens == 12 and result.output_tokens == 8
+    assert pipeline.history()[-1]["usage"]["total_tokens"] == 20
+    import json
+    json.dumps(pipeline.history())
+    assert isinstance(pipeline.history()[-1]["steps"][1]["input"], list)
+
+
+def test_list_only_aggregate_and_leading_input_contracts():
+    from maslab import ConcatAggregate
+
+    class Fixed(Model):
+        def respond(self, messages):
+            return Response(list(messages), "answer")
+
+    with pytest.raises(TypeError):
+        Pipeline([Agent("a", Fixed("mock")), ConcatAggregate()])
+    with pytest.raises(TypeError):
+        ConcatAggregate()(Response([], "answer"))
+    memory = CumulativeConcatAggregate()
+    pipeline = Pipeline([memory])
+    with pytest.raises(TypeError):
+        pipeline.query("not a response")
+    assert memory.history() == []
+    assert "answer" in pipeline.query([Response([], "answer")]).content
