@@ -342,6 +342,29 @@ Lists are never implicitly converted to strings or mapped through single-respons
 Every loop executes all steps; handoffs, including loop boundaries, must match these types.
 The final step determines whether the pipeline returns one Response or a list.
 
+Use the optional `transforms` argument for Aggregate/Transform stages that prepare
+the next loop's input. They run only between iterations, exactly `loop - 1` times,
+and are skipped entirely with `loop=1`. The final iteration returns the last
+`steps` output, retaining the agents' responses instead of returning review prompts:
+
+```python
+pipeline = ml.Pipeline(
+    steps=[ml.ParallelMultiagent(agents)],
+    loop=4,
+    transforms=[
+        ml.CumulativeConcatAggregate(),
+        ml.WrapBroadcast(prefix=review_prefixes, suffix=review_suffixes),
+    ],
+)
+responses = pipeline.query(initial_prompts)
+```
+
+Between-loop stages use the preceding loop number in history and continue its
+step numbering. `dialog()` inherits a parent's loop number for entries that lack
+one; explicit nested loop numbers still take precedence. Stateful aggregates
+retain their normal lifetime across queries; create a new instance or reset the
+aggregate for an independent task.
+
 `Transform.transform(Response) -> Response` processes a response without calling
 a model. Extraction, normalization, and formatting policies belong in application
 implementations of this interface. Use an agent step for model-based processing.

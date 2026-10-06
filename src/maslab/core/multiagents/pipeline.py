@@ -19,6 +19,9 @@ class Pipeline(Multiagent[Response | list[Response]]):
     Aggregate responses pass to subsequent queries or transforms.
     A leading Aggregate accepts a response list as the pipeline input. The final
     step determines whether query returns one Response or an ordered list.
+    Optional ``transforms`` (Aggregate/Transform instances) run in order only
+    between loop iterations. They prepare the next input without changing the
+    final iteration's return value. With ``loop=1`` they are never executed.
     """
 
     def __init__(
@@ -26,10 +29,12 @@ class Pipeline(Multiagent[Response | list[Response]]):
         steps: Sequence[Agent | Multiagent | Transform | Aggregate],
         loop: int = 1,
         *,
+        transforms: Sequence[Transform | Aggregate] = (),
         id: str = "pipeline",
     ):
         super().__init__(id=id)
         self.steps = tuple(steps)
+        self.transforms = tuple(transforms)
         if type(loop) is not int or loop < 1:
             raise ValueError("loop must be a positive integer")
         self.loop = loop
@@ -56,13 +61,18 @@ class Pipeline(Multiagent[Response | list[Response]]):
             raise ValueError("a pipeline requires at least one step")
         if any(not isinstance(step, (Agent, Multiagent, Transform, Aggregate)) for step in self.steps):
             raise TypeError("participants must be Agent, Multiagent, Transform, or Aggregate instances")
+        if any(not isinstance(step, (Transform, Aggregate)) for step in self.transforms):
+            raise TypeError("transforms must be Transform or Aggregate instances")
         if isinstance(self.steps[0], Transform):
             raise ValueError("the first step must be a query participant or Aggregate")
         self._validate_flow(self.accepts_multiple)
 
+    def _steps_for_loop(self, loop_idx):
+        return self.steps + self.transforms if loop_idx < self.loop else self.steps
+
     def _validate_flow(self, multiple):
-        for _ in range(self.loop):
-            for step in self.steps:
+        for loop_idx in range(1, self.loop + 1):
+            for step in self._steps_for_loop(loop_idx):
                 if isinstance(step, Aggregate):
                     if not multiple and not step.accepts_single:
                         raise TypeError("Aggregate steps require a response list")
@@ -169,7 +179,7 @@ class Pipeline(Multiagent[Response | list[Response]]):
         current_response = deepcopy(message) if response_list else None
         try:
             for loop_idx in range(1, self.loop + 1):
-                for step_idx, step in enumerate(self.steps, start=1):
+                for step_idx, step in enumerate(self._steps_for_loop(loop_idx), start=1):
                     if isinstance(step, Aggregate):
                         current_response = self._run_aggregate(
                             step, current_response, records, loop_idx, step_idx,
